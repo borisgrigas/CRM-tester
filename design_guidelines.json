@@ -1,0 +1,119 @@
+{
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "typography": {
+    "headings": {
+      "fontFamily": "Cabinet Grotesk, sans-serif",
+      "weights": ["400", "700", "900"],
+      "usage": "Use tight letter spacing (tracking-tight) for headings above 32px. Never use generic sans for headings."
+    },
+    "body": {
+      "fontFamily": "Satoshi, sans-serif",
+      "weights": ["400", "500", "600"],
+      "usage": "Clean geometric sans for high legibility in data-heavy tables and forms."
+    },
+    "mono": {
+      "fontFamily": "IBM Plex Mono, monospace",
+      "weights": ["400", "600"],
+      "usage": "Use for numerical data (metrics, KPIs, IDs, currency) to ensure tabular lining."
+    },
+    "hierarchy": {
+      "h1": "text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed text-zinc-700",
+      "small": "text-sm text-zinc-500",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em] text-zinc-500"
+    }
+  },
+  "colors": {
+    "background": {
+      "primary": "bg-white",
+      "secondary": "bg-zinc-50",
+      "tertiary": "bg-zinc-100"
+    },
+    "text": {
+      "primary": "text-zinc-900",
+      "secondary": "text-zinc-600",
+      "tertiary": "text-zinc-400",
+      "inverse": "text-white"
+    },
+    "border": "border-zinc-200",
+    "primary": {
+      "DEFAULT": "bg-blue-600",
+      "hover": "bg-blue-700",
+      "text": "text-white"
+    },
+    "status": {
+      "hot": "bg-red-50 text-red-700 border-red-200",
+      "warm": "bg-amber-50 text-amber-700 border-amber-200",
+      "cold": "bg-blue-50 text-blue-700 border-blue-200",
+      "success": "bg-emerald-50 text-emerald-700 border-emerald-200"
+    },
+    "guidelines": "Color is Function Only. 95% of the UI should be monochrome. Color exists only to guide action. Never use pure #000000 or #808080. Always tint your neutral greys with a tiny bit of blue (cool) or orange (warm)."
+  },
+  "layout": {
+    "spacing_system": "Generous spacing philosophy. Use p-4, p-6, p-8, p-12. Containers with borders must have internal padding (p-6) to prevent text collision.",
+    "dashboard_grid": "MODE B: THE 'CONTROL ROOM' GRID. Dense, Data Correlation. Base grid: grid-cols-1 md:grid-cols-3 lg:grid-cols-4. Tight gaps (gap-4 or gap-6). Widget Ratios: Summary (col-span-1), Primary Data (col-span-2 row-span-2), Feed/List (col-span-1 row-span-2). Every pixel must be utilized. Use h-full on children.",
+    "surfaces": "GRID BORDERS (The 'Technical' Look). Expose the skeleton. Container: border-collapse style layout. Items: border-r border-b border-border/40. No heavy shadows. Flat backgrounds.",
+    "alignment": "Mobile-First. Left-align dense content. Optical alignment over geometrical alignment."
+  },
+  "components": {
+    "cards": "Default: Flat background, 1px subtle border (border-zinc-200), no shadow. Hover: Slight lift (-translate-y-1), subtle shadow (shadow-md), border color darkens (border-zinc-300).",
+    "buttons": "Primary: Solid bg-blue-600, text-white, hover:bg-blue-700. Secondary: bg-white, border border-zinc-200, text-zinc-900, hover:bg-zinc-50. Ghost: text-zinc-600 hover:bg-zinc-100. Minimum 3:1 contrast against adjacent colors.",
+    "forms": "Use Shadcn Form, Input, Select. Left-align labels. Clear focus states (focus:ring-2 focus:ring-blue-500 focus:border-blue-500).",
+    "tables": "Dense. Use mono font for numbers. 1px bottom border for rows. Hover state: bg-zinc-50.",
+    "kanban": "Subtle background for columns (bg-zinc-50/50). Cards: bg-white, border-zinc-200, shadow-sm. Dragging state: rotate-2, shadow-lg, border-blue-500.",
+    "badges": "Sharp edges (rounded-sm) or fully pill (rounded-full). Small uppercase text. Use status colors.",
+    "charts": "Recharts. Use monochrome base with primary accent (blue-600). Donut chart for pipeline stages, Bar chart for revenue. Clean tooltips."
+  },
+  "interactions_and_motion": {
+    "hover_states": "ALWAYS explicitly set text color on hover. hover:bg-zinc-100 hover:text-zinc-900",
+    "focus_states": "Must have HIGHER contrast than default state. focus:ring-2 focus:ring-blue-500 focus:outline-none",
+    "transitions": "Use specific properties (transition-colors, transition-transform) 0.2s ease.",
+    "kanban_drag": "Smooth drag and drop animation. Highlight drop zones with a subtle blue tint (bg-blue-50/50 border-blue-200 border-dashed)."
+  },
+  "icons_and_assets": {
+    "icon_library": "@phosphor-icons/react",
+    "install_command": "yarn add @phosphor-icons/react",
+    "icon_usage": "Duotone weight for high-end look or Regular for technical look. Use for sidebar navigation, action buttons, status indicators.",
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1758691737605-69a0e78bd193?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHw0fHxtb2Rlcm4lMjBvZmZpY2UlMjB3b3JrZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3Nzc4MTQ1MjJ8MA&ixlib=rb-4.1.0&q=85",
+        "category": "user_avatar_female",
+        "description": "Avatar for the logged in user or team members."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1752856408620-2e6fc6ac072f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBvZmZpY2UlMjB3b3JrZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3Nzc4MTQ1MjJ8MA&ixlib=rb-4.1.0&q=85",
+        "category": "user_avatar_male",
+        "description": "Avatar for team members in leaderboard or tasks."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1572533717789-543da73adb20?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwxfHxjb3Jwb3JhdGUlMjBjb21wYW55JTIwbG9nbyUyMG1pbmltYWx8ZW58MHx8fHwxNzc3ODE0NTIyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "company_logo_primary",
+        "description": "Logo for the Master Tenant/Franchisor."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1699511051588-94ee6509de71?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwzfHxjb3Jwb3JhdGUlMjBjb21wYW55JTIwbG9nbyUyMG1pbmltYWx8ZW58MHx8fHwxNzc3ODE0NTIyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "company_logo_secondary",
+        "description": "Logo for Sub-tenant/Franchisee unit."
+      }
+    ]
+  },
+  "accessibility_and_testing": {
+    "contrast": "Minimum 4.5:1 for normal text, 3:1 for large text. Avoid pure transparent backgrounds for text-overlays.",
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case. Example: data-testid=\"login-submit-button\", data-testid=\"kanban-deal-card-123\"."
+  },
+  "instructions_to_main_agent": [
+    "Implement the Swiss & High-Contrast Archetype: Use stark white/zinc backgrounds with sharp 1px borders (border-zinc-200) and avoid heavy shadows. Ensure density in the dashboard.",
+    "Use Cabinet Grotesk for headings and Satoshi for body text. Integrate via Google Fonts or Fontsource.",
+    "Implement the Kanban board using @dnd-kit. Ensure smooth drag interactions and drop-zone highlights.",
+    "Use Recharts for the Funnel chart and Revenue Bar chart. Keep chart colors constrained to the monochrome palette + primary blue.",
+    "Use @phosphor-icons/react for all icons. Install via yarn add @phosphor-icons/react.",
+    "Implement data-testid on all interactive elements as requested.",
+    "Use Brazilian Portuguese for all UI text.",
+    "For the Multi-Company Switcher and Header, use the provided company_logo and user_avatar images.",
+    "Role-based UI: Display 'MASTER' badge or 'ADMIN' badge prominently next to user info or company name."
+  ]
+}
