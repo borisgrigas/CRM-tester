@@ -1,14 +1,10 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 
 export default function ProtectedRoute({ children }) {
-  const { user, loading, refreshMe } = useAuthStore();
+  const { user, loading } = useAuthStore();
   const location = useLocation();
-
-  useEffect(() => {
-    if (user === null && loading) refreshMe();
-  }, []); // eslint-disable-line
 
   if (loading) {
     return (

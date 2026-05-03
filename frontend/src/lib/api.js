@@ -18,8 +18,8 @@ api.interceptors.response.use(
       try {
         await axios.post(`${API}/auth/refresh`, {}, { withCredentials: true });
         return api(error.config);
-      } catch (e) {
-        // fall through
+      } catch (refreshErr) {
+        console.error("Token refresh failed:", refreshErr?.message || refreshErr);
       }
     }
     return Promise.reject(error);

@@ -49,7 +49,9 @@ export const useAuthStore = create((set, get) => ({
   logout: async () => {
     try {
       await api.post("/auth/logout");
-    } catch (e) {}
+    } catch (e) {
+      console.error("Logout request failed:", e?.message || e);
+    }
     set({ user: null, companies: [], activeCompanyId: null, activeRole: null });
   },
 

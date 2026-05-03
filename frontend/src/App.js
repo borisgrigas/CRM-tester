@@ -23,10 +23,10 @@ const queryClient = new QueryClient({
 });
 
 function Bootstrap({ children }) {
-  const { refreshMe } = useAuthStore();
+  const refreshMe = useAuthStore((s) => s.refreshMe);
   useEffect(() => {
     refreshMe();
-  }, []); // eslint-disable-line
+  }, [refreshMe]);
   return children;
 }
 

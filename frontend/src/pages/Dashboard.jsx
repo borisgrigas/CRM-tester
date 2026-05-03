@@ -196,7 +196,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 (board.data?.items || []).map((row, i) => (
-                  <div key={i} className="flex items-center gap-3 py-3" data-testid={`leaderboard-row-${i}`}>
+                  <div key={row.user?.id || `row-${i}`} className="flex items-center gap-3 py-3" data-testid={`leaderboard-row-${i}`}>
                     <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-zinc-900 font-mono text-[11px] font-bold text-white">
                       {i + 1}
                     </div>

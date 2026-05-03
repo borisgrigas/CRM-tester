@@ -50,8 +50,8 @@ export default function Analytics() {
                     outerRadius={100}
                     paddingAngle={2}
                   >
-                    {(sources.data?.items || []).map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    {(sources.data?.items || []).map((entry, i) => (
+                      <Cell key={entry.origin || `cell-${i}`} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip />
@@ -99,7 +99,7 @@ export default function Analytics() {
               </thead>
               <tbody>
                 {(board.data?.items || []).map((row, i) => (
-                  <tr key={i} className="border-b border-zinc-100 last:border-0">
+                  <tr key={row.user?.id || `row-${i}`} className="border-b border-zinc-100 last:border-0">
                     <td className="py-3 font-mono text-zinc-500">{i + 1}</td>
                     <td className="py-3">{row.user?.name}</td>
                     <td className="py-3 text-right font-mono">{row.deals_won}</td>
