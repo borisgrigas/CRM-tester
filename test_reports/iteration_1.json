@@ -1,0 +1,45 @@
+{
+  "summary": "First testing iteration of CRM SaaS Multi-Tenant. Created /app/backend/tests/backend_test.py (24 pytest tests) covering auth (login, /me, switch-company, logout, multi-tenant), contacts CRUD + role enforcement + tenant isolation, pipelines (6 stages), deals (list/move stage/won/lost), analytics (overview/funnel/revenue/leaderboard), companies (MASTER-only + consolidated), tasks, notifications. Result: 24/24 backend tests PASS. Frontend smoke: login -> /dashboard works with KPIs, charts, funnel, leaderboard, sources; sidebar shows MASTER-only 'Empresas' link; navigation to Contatos (filters + Novo contato), Pipeline (6 kanban columns rendered), Tarefas, Admin Companies (consolidated table with 4 empresas) all functional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/login", "issue": "Para usuário MASTER que tem role MASTER em todas as 4 empresas, a empresa default escolhida é a primeira retornada pelo Mongo (Unidade Belo Horizonte) em vez da Franqueadora ACME. A lógica next((c for c in companies if c['role']=='MASTER'), companies[0]) não diferencia MASTER global. Sugestão: priorizar company.plan == 'enterprise' ou slug == 'acme', ou ordenar memberships por created_at."},
+      {"endpoint": "/api/analytics/revenue", "issue": "Retorna 6 buckets mas dois estão duplicados como 'Jan/26' (label colisão devido a deslocamento de mês quando o mês atual é May). Não quebra a UI mas a label está ambígua."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Dashboard charts (Recharts)", "issue": "Console warnings 'The width(-1) and height(-1) of chart should be greater than 0' aparecem 4x em /dashboard. ResponsiveContainer pode estar renderizando antes do parent ter dimensão. Considerar minHeight/aspect ou key remount após data load.", "selector": "ResponsiveContainer", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Opcional: melhorar default company para MASTER no /auth/login (ex: priorizar plan=enterprise ou slug=acme).",
+    "Opcional: corrigir labels duplicadas em /api/analytics/revenue (Jan/26 aparece 2x).",
+    "Opcional: corrigir warnings do Recharts no Dashboard (ResponsiveContainer precisa minHeight)."
+  ],
+  "critical_code_review_comments": [
+    "deps.py require_master(): a função retorna uma async closure _check em vez de ser ela própria a dependency. Como está, FastAPI injeta a função _check (não chamada) — qualquer rota que dependa de require_master sem invocar como require_master() quebraria. Verificar se está sendo usado em algum router. Se não for usado, pode ser removido ou refatorado para require_roles('MASTER').",
+    "auth_router._set_cookies usa secure=False — aceitável em preview, mas em produção HTTPS deve ser True. Considerar variável de ambiente COOKIE_SECURE.",
+    "Não há rate limiting nem lockout após N tentativas erradas em /auth/login (auth_testing.md sugere 5 falhas). Brute force aberto.",
+    "_set_cookies usa samesite='lax'. Para chamadas cross-origin (frontend e backend em domínio diferente) com credentials, samesite='none' + secure=True seria mais robusto. No preview funciona porque ambos compartilham o domínio preview.emergentagent.com.",
+    "Login response retorna access_token e refresh_token no JSON além dos cookies. Vazar refresh em response body anula o benefício do httpOnly se o frontend cachear. Considerar enviar apenas access_token no body."
+  ],
+  "updated_files": [
+    "/app/backend/tests/__init__.py",
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% (todas as navegações principais ok)"},
+  "test_credentials": "Usadas conforme /app/memory/test_credentials.md - todas funcionaram.",
+  "seed_data_creation": "Nenhum seed adicional criado. Seed existente (1 franqueadora + 3 unidades + ~51 contatos + ~21 deals) já populado e usado pelos testes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend 100% verde. backend_test.py em /app/backend/tests/backend_test.py com fixtures por role em conftest.py. Frontend testado via playwright em desktop 1920x1080 - login, dashboard, contatos, pipeline (6 colunas kanban), tasks, admin/companies funcionando. Ainda não testei: drag-and-drop de cards no kanban, dialog de Novo contato (preencher e submeter), troca de empresa via CompanySwitcher do header com refresh dos dados, página /analytics standalone, página /settings, fluxo de logout no UI. Recharts emite warnings de dimensões mas renderiza ok."
+}
