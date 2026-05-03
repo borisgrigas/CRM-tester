@@ -60,15 +60,11 @@ def require_roles(*allowed_roles: str):
     return checker
 
 
-def require_master(user: dict = Depends(get_current_user), db=Depends(get_db)):
-    """For routes only the franchisor MASTER can access."""
-
-    async def _check():
-        membership = await db.user_companies.find_one(
-            {"user_id": user["id"], "role": "MASTER", "is_active": True}, {"_id": 0}
-        )
-        if not membership:
-            raise HTTPException(status_code=403, detail="Apenas MASTER")
-        return user
-
-    return _check
+async def require_master(user: dict = Depends(get_current_user), db=Depends(get_db)) -> dict:
+    """For routes only a MASTER user can access."""
+    membership = await db.user_companies.find_one(
+        {"user_id": user["id"], "role": "MASTER", "is_active": True}, {"_id": 0}
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="Apenas MASTER")
+    return user

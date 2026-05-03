@@ -64,8 +64,12 @@ async def login(payload: LoginInput, response: Response, db=Depends(get_db)):
     if not companies:
         raise HTTPException(status_code=403, detail="Usuário sem empresa ativa")
 
-    # default to first (or first MASTER if any)
-    default_company = next((c for c in companies if c["role"] == "MASTER"), companies[0])
+    # Prefer franqueadora (enterprise plan) for MASTER, else first MASTER membership, else first
+    default_company = (
+        next((c for c in companies if c["role"] == "MASTER" and c.get("plan") == "enterprise"), None)
+        or next((c for c in companies if c["role"] == "MASTER"), None)
+        or companies[0]
+    )
     access = create_access_token(user["id"], user["email"], default_company["id"], default_company["role"])
     refresh = create_refresh_token(user["id"])
     _set_cookies(response, access, refresh)
@@ -99,7 +103,11 @@ async def refresh(request: Request, response: Response, db=Depends(get_db)):
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
 
     companies = await _user_companies_payload(db, user["id"])
-    default_company = next((c for c in companies if c["role"] == "MASTER"), companies[0]) if companies else None
+    default_company = (
+        next((c for c in companies if c["role"] == "MASTER" and c.get("plan") == "enterprise"), None)
+        or next((c for c in companies if c["role"] == "MASTER"), None)
+        or (companies[0] if companies else None)
+    )
     cid = default_company["id"] if default_company else None
     role = default_company["role"] if default_company else None
     access = create_access_token(user["id"], user["email"], cid, role)

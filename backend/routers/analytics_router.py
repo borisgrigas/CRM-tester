@@ -109,9 +109,15 @@ async def revenue(
 ):
     now = datetime.now(timezone.utc)
     out = []
-    for i in range(months - 1, -1, -1):
-        ref = (now.replace(day=1) - timedelta(days=30 * i))
-        month_start = ref.replace(day=1)
+    # Build the list of months walking backwards from current month
+    cur = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_starts = []
+    for _ in range(months):
+        month_starts.append(cur)
+        prev_last = cur - timedelta(days=1)
+        cur = prev_last.replace(day=1)
+    month_starts.reverse()
+    for month_start in month_starts:
         next_month = (month_start + timedelta(days=32)).replace(day=1)
 
         won = 0.0

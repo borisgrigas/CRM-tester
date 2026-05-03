@@ -132,7 +132,7 @@ export default function Dashboard() {
                 últimos 6 meses
               </span>
             </div>
-            <div className="mt-4 h-64">
+            <div className="mt-4 h-64 min-h-[200px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={revenue.data?.items || []}>
                   <defs>
