@@ -1,0 +1,72 @@
+{
+  "summary": "Testada a iteração 2 (gestão de usuários/empresas + regras de negócio). Criado /app/backend/tests/test_admin_features.py com 20 novos testes pytest. Resultado backend: 43/44 verdes (24 originais + 19/20 novos). 1 falha confirmada: /api/auth/switch-company aceita trocar para empresa soft-deletada (deleted_at preenchido) — bug real. Frontend testado com Playwright: Sidebar condicional por role correto (MASTER vê Equipe+Empresas, ADMIN só Equipe, COMMERCIAL nenhum); /admin/users invite → deactivate → remove fluxo completo funcionou para ADMIN; /admin/companies slug é editável na criação e DISABLED na edição; tabs Gestão/Métricas funcionam.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/auth/switch-company",
+        "issue": "Permite trocar para empresa com deleted_at preenchido e/ou is_active=False. Retorna 200 + token válido apontando para empresa deletada. Consequência: MASTER cujo active_company foi deletado fica preso (UI mostra 'Empresa não encontrada' em chamadas subsequentes pois get_current_company rejeita, mas o token já foi emitido). Fix sugerido: em auth_router.switch_company filtrar {'deleted_at': None, 'is_active': True} antes de emitir o token.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "POST /api/auth/login",
+        "issue": "Mesma raiz: a seleção da empresa default inclui memberships apontando para empresas com deleted_at preenchido. Reproduzido durante testes: após soft-delete de uma empresa da qual o MASTER era membro, o login subsequente escolheu aquela empresa como active_company_id e o frontend apresentou erros 404 'Empresa não encontrada' em tela. Fix: ao montar companies no /auth/login, filtrar por {deleted_at: None, is_active: True}.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/users/{id}/deactivate",
+        "issue": "Ao ADMIN tentar self-deactivate o retorno é 403 'ADMIN não pode alterar outro ADMIN/MASTER' (via _enforce_admin_protection) ao invés de 400 'último ADMIN ativo'. Funciona (bloqueia), porém a mensagem é confusa porque o target é o próprio usuário, não 'outro'. Sugestão: checar self + last-admin antes de _enforce_admin_protection, ou trocar texto para 'Você não pode alterar seu próprio papel/status sendo ADMIN'."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "DialogContent (AdminUsers/AdminCompanies)",
+        "issue": "Warning de accessibility: 'Missing Description or aria-describedby={undefined} for {DialogContent}'. Adicionar <DialogDescription> ou aria-describedby aos dialogs de Convidar/Empresa.",
+        "selector": "[role='dialog']",
+        "priority": "LOW"
+      },
+      {
+        "component": "Dashboard Recharts",
+        "issue": "Persiste warning 'The width(-1) and height(-1) of chart should be greater than 0' já reportado na iteração 1.",
+        "selector": "ResponsiveContainer",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_admin_features.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/iteration2_results.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Filtrar deleted_at/is_active em /api/auth/switch-company e na seleção de default company em /api/auth/login (bug confirmado: MASTER ficou preso em empresa deletada durante testes UI).",
+    "Melhorar mensagem quando ADMIN tenta self-deactivate (passar pela verificação de last-admin antes da admin-protection).",
+    "Adicionar <DialogDescription> em Convidar usuário e Empresa para remover warnings de a11y."
+  ],
+  "critical_code_review_comments": [
+    "auth_router.switch_company não valida company.deleted_at nem company.is_active — apenas checa membership. Confirma-se bug: switch-company retorna 200 mesmo para empresa com deleted_at preenchido.",
+    "companies_router._ensure_master checa user_companies com role=MASTER sem filtrar pela empresa — se MASTER foi adicionado a uma empresa que depois foi soft-deletada, ele continua 'MASTER' globalmente. Isso é ok (é o comportamento desejado para criar/gerenciar empresas), porém reforça que login/switch devem filtrar deleted_at.",
+    "users_router.remove_user faz delete da membership mas não invalida tokens existentes do usuário removido. Um usuário removido durante uma sessão ativa continuará tendo acesso até o token expirar. Considerar blacklist ou bump de tokens_version.",
+    "users_router.invite_user aceita uma senha arbitrária via payload ('password'). Isso permite que o ADMIN que convida defina a senha inicial do usuário, o que é perigoso (ADMIN conhece a senha). Melhor gerar token temporário (como já aponta o print do activation link) e forçar set-password na aceitação do convite.",
+    "companies_router delete_company não exclui/soft-deleta dados filhos (contacts, deals, pipelines, user_companies). Após soft-delete, dados órfãos continuam no Mongo."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_features.py (NOVO)"
+  ],
+  "success_rate": {
+    "backend": "97.7% (43/44 — 1 falha é bug real detectado)",
+    "frontend": "100% (todos os flows testados passaram)"
+  },
+  "test_credentials": "Usadas conforme /app/memory/test_credentials.md — todas funcionaram.",
+  "seed_data_creation": "Nenhum seed permanente. Todos os dados TEST_* criados nos testes foram limpos via script ad-hoc após os runs.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend: 43/44 testes pytest verdes em /app/backend/tests/ (backend_test.py + test_admin_features.py). 1 falha real: /api/auth/switch-company aceita empresa soft-deletada (reproduzível via test_deleted_company_returns_404). Mesmo bug afeta /api/auth/login (default active_company pode ser empresa deletada — detectado durante teste UI quando MASTER perdeu acesso após deletar companies de teste). Frontend: Sidebar condicional OK; /admin/users CRUD+actions OK para ADMIN; /admin/companies slug imutável na edição OK; tabs OK. Não testei: troca de papel (role) via UI dropdown, activate após deactivate via UI, edição de nome/plano de empresa via lápis com submit real, exclusão (soft-delete) de empresa via UI com confirmação. Os testes de pytest criam companies/users TEST_* e limpam via DELETE — porém o soft-delete deixa memberships órfãs do criador MASTER; script de cleanup manual foi executado.",
+  "rca_of_the_issue": "Bug /api/auth/switch-company: o endpoint apenas valida que a membership existe para o par (user_id, company_id); não filtra companies.deleted_at nem companies.is_active. Resultado: aceita empresa deletada e emite JWT com company_id inválido. Reprodução: (1) MASTER cria empresa slug=X; (2) MASTER faz DELETE /api/companies/{X} (soft delete preenche deleted_at+is_active=False); (3) POST /api/auth/switch-company {company_id: X} retorna 200 com access_token; (4) GET /api/contacts com esse token retorna 404 'Empresa não encontrada' (bloqueado corretamente pelo middleware, mas confuso para o frontend). Mitigação: em auth_router.switch_company, após buscar membership, fazer db.companies.find_one({'id': company_id, 'deleted_at': None, 'is_active': True}) e retornar 404/403 se não encontrar. Aplicar o mesmo filtro na montagem do array 'companies' no /auth/login para que a default active_company nunca seja inválida."
+}

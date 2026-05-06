@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: crm_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+    container_name: crm_backend
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    environment:
+      MONGO_URL: "mongodb://mongodb:27017"
+      DB_NAME: "crm_saas"
+      CORS_ORIGINS: "http://localhost:3000"
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production-64-chars}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-master@franqueadora.com}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-master123}"
+    ports:
+      - "8001:8001"
+    command: uvicorn server:app --host 0.0.0.0 --port 8001
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: crm_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      REACT_APP_BACKEND_URL: "http://localhost:8001"
+      WDS_SOCKET_PORT: "0"
+    ports:
+      - "3000:3000"
+    command: yarn start
+
+volumes:
+  mongo_data:
