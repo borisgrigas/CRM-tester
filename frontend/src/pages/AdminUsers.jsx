@@ -39,14 +39,15 @@ const ROLE_OPTIONS_FOR = (actorRole) =>
     : ["COMMERCIAL", "ANALYST"]; // ADMIN só pode atribuir COMMERCIAL/ANALYST
 
 function InviteDialog({ actorRole, onCreated }) {
+  const INITIAL_FORM = { name: "", email: "", role: "COMMERCIAL", password: "" };
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", role: "COMMERCIAL", password: "senha123" });
+  const [form, setForm] = useState(INITIAL_FORM);
   const create = useMutation({
     mutationFn: async () => (await api.post("/users/invite", form)).data,
     onSuccess: () => {
       toast.success("Usuário convidado");
       setOpen(false);
-      setForm({ name: "", email: "", role: "COMMERCIAL", password: "senha123" });
+      setForm(INITIAL_FORM);
       onCreated?.();
     },
     onError: (e) => toast.error(formatApiError(e.response?.data?.detail)),
@@ -87,8 +88,15 @@ function InviteDialog({ actorRole, onCreated }) {
               </Select>
             </div>
             <div>
-              <Label className="text-xs">Senha temporária</Label>
-              <Input className="mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              <Label className="text-xs">Senha temporária *</Label>
+              <Input
+                className="mt-1"
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                placeholder="defina uma senha inicial"
+                data-testid="invite-form-password"
+              />
             </div>
           </div>
         </div>
@@ -96,7 +104,7 @@ function InviteDialog({ actorRole, onCreated }) {
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
           <Button
             className="bg-blue-600 text-white hover:bg-blue-700"
-            disabled={!form.name || !form.email || create.isPending}
+            disabled={!form.name || !form.email || !form.password || create.isPending}
             onClick={() => create.mutate()}
             data-testid="invite-form-submit"
           >

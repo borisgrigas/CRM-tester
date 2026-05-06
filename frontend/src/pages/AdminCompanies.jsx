@@ -49,12 +49,12 @@ function CompanyDialog({ trigger, initial, onSaved }) {
 
   React.useEffect(() => {
     if (open && initial) {
-      setForm({
+      setForm(() => ({
         name: initial.name || "",
         slug: initial.slug || "",
         plan: initial.plan || "free",
         logo_url: initial.logo_url || "",
-      });
+      }));
     }
   }, [open, initial]);
 
