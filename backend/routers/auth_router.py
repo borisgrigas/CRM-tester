@@ -43,7 +43,11 @@ async def _user_companies_payload(db, user_id: str) -> list[dict]:
         {"user_id": user_id, "is_active": True}, {"_id": 0}
     ).to_list(100)
     company_ids = [m["company_id"] for m in memberships]
-    companies = await db.companies.find({"id": {"$in": company_ids}}, {"_id": 0}).to_list(100)
+    # Apenas empresas ativas e não deletadas são apresentadas/seleccionáveis
+    companies = await db.companies.find(
+        {"id": {"$in": company_ids}, "deleted_at": None, "is_active": True},
+        {"_id": 0},
+    ).to_list(100)
     by_id = {c["id"]: c for c in companies}
     out = []
     for m in memberships:
@@ -133,9 +137,15 @@ async def switch_company(
     )
     if not membership:
         raise HTTPException(status_code=403, detail="Empresa não autorizada")
+    company = await db.companies.find_one(
+        {"id": payload.company_id, "deleted_at": None}, {"_id": 0}
+    )
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    if company.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="Empresa inativa")
     access = create_access_token(user["id"], user["email"], payload.company_id, membership["role"])
     _set_cookies(response, access)
-    company = await db.companies.find_one({"id": payload.company_id}, {"_id": 0})
     return {
         "access_token": access,
         "active_company_id": payload.company_id,

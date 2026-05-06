@@ -161,10 +161,10 @@ class TestUserActivateDeactivate:
         my_id = admin_sp_session.last_login["user"]["id"]
         r = admin_sp_session.patch(f"{API}/users/{my_id}/deactivate", timeout=30)
         # Backend rule: ADMIN não pode alterar outro ADMIN (403) OU último ADMIN ativo (400)
+        # OU self-protection (400 'Você não pode inativar a si mesmo'). Todas são válidas.
         assert r.status_code in (400, 403), r.text
-        # Validate message mentions ADMIN
         detail = r.json().get("detail", "")
-        assert "ADMIN" in detail
+        assert any(kw in detail for kw in ("ADMIN", "si mesmo", "inativar"))
 
 
 class TestUserDelete:

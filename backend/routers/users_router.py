@@ -55,7 +55,7 @@ async def list_users(membership: dict = Depends(get_current_company), db=Depends
     return {
         "items": [
             {
-                **by_id.get(m["user_id"], {"id": m["user_id"], "name": "—"}),
+                **by_id.get(m["user_id"], {"id": m["user_id"], "name": "—", "email": "", "avatar_url": None}),
                 "role": m["role"],
                 "is_active": m.get("is_active", True),
                 "invited_at": m.get("invited_at"),
@@ -127,6 +127,8 @@ async def activate_user(user_id: str, membership: dict = Depends(get_current_com
 
 @router.patch("/users/{user_id}/deactivate", dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
 async def deactivate_user(user_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+    if user_id == membership["user_id"]:
+        raise HTTPException(status_code=400, detail="Você não pode inativar a si mesmo")
     await _enforce_admin_protection(db, user_id, membership["company_id"], membership["role"])
     await _ensure_not_last_active_admin(db, user_id, membership["company_id"])
     res = await db.user_companies.update_one(
