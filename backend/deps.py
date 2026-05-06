@@ -46,6 +46,12 @@ async def get_current_company(user: dict = Depends(get_current_user), db=Depends
     )
     if not membership:
         raise HTTPException(status_code=403, detail="Acesso negado a esta empresa")
+
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company or company.get("deleted_at") is not None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    if company.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="Empresa inativa")
     return membership
 
 

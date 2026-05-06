@@ -33,6 +33,7 @@ class CompanyCreate(BaseModel):
 
 
 class CompanyUpdate(BaseModel):
+    """Slug é imutável após criação — não incluído aqui."""
     name: Optional[str] = None
     plan: Optional[str] = None
     logo_url: Optional[str] = None

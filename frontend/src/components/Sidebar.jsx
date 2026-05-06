@@ -9,6 +9,7 @@ import {
   Buildings,
   Gear,
   SignOut,
+  UserGear,
 } from "@phosphor-icons/react";
 import { useAuthStore } from "../stores/authStore";
 
@@ -18,6 +19,10 @@ const items = [
   { to: "/pipeline", label: "Pipeline", Icon: Kanban, testid: "nav-pipeline" },
   { to: "/tasks", label: "Tarefas", Icon: ListChecks, testid: "nav-tasks" },
   { to: "/analytics", label: "Analytics", Icon: ChartBar, testid: "nav-analytics" },
+];
+
+const adminItems = [
+  { to: "/admin/users", label: "Equipe", Icon: UserGear, testid: "nav-admin-users" },
 ];
 
 const masterItems = [
@@ -73,6 +78,33 @@ export default function Sidebar() {
             </NavLink>
           ))}
         </div>
+
+        {(activeRole === "MASTER" || activeRole === "ADMIN") && (
+          <>
+            <p className="mt-6 px-3 pb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+              Administração
+            </p>
+            <div className="space-y-1">
+              {adminItems.map(({ to, label, Icon, testid }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  data-testid={testid}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
+                      isActive
+                        ? "bg-zinc-900 text-white"
+                        : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                    }`
+                  }
+                >
+                  <Icon size={18} weight="duotone" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          </>
+        )}
 
         {activeRole === "MASTER" && (
           <>

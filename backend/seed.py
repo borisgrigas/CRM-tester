@@ -54,7 +54,7 @@ async def seed():
         "slug": "acme",
         "plan": "enterprise",
         "logo_url": "https://images.unsplash.com/photo-1572533717789-543da73adb20?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwxfHxjb3Jwb3JhdGUlMjBjb21wYW55JTIwbG9nbyUyMG1pbmltYWx8ZW58MHx8fHwxNzc3ODE0NTIyfDA&ixlib=rb-4.1.0&q=85",
-        "settings": {}, "created_at": _now_iso(), "deleted_at": None,
+        "settings": {}, "is_active": True, "created_at": _now_iso(), "deleted_at": None,
     }
     units = []
     for unit_name in ["Unidade São Paulo", "Unidade Rio de Janeiro", "Unidade Belo Horizonte"]:
@@ -64,7 +64,7 @@ async def seed():
             "slug": unit_name.lower().replace(" ", "-").replace("ã", "a"),
             "plan": "pro",
             "logo_url": "https://images.unsplash.com/photo-1699511051588-94ee6509de71?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwzfHxjb3Jwb3JhdGUlMjBjb21wYW55JTIwbG9nbyUyMG1pbmltYWx8ZW58MHx8fHwxNzc3ODE0NTIyfDA&ixlib=rb-4.1.0&q=85",
-            "settings": {}, "created_at": _now_iso(), "deleted_at": None,
+            "settings": {}, "is_active": True, "created_at": _now_iso(), "deleted_at": None,
         })
 
     all_companies = [franqueadora, *units]

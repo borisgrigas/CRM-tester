@@ -12,6 +12,7 @@ import Tasks from "./pages/Tasks";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import AdminCompanies from "./pages/AdminCompanies";
+import AdminUsers from "./pages/AdminUsers";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { useAuthStore } from "./stores/authStore";
@@ -113,6 +114,16 @@ export default function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Settings />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/users"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <AdminUsers />
                   </Layout>
                 </ProtectedRoute>
               }

@@ -31,8 +31,8 @@ async def _ensure_master(db, user_id: str):
 async def list_companies(user: dict = Depends(get_current_user), db=Depends(get_db)):
     await _ensure_master(db, user["id"])
     items = await db.companies.find({"deleted_at": None}, {"_id": 0}).to_list(500)
-    # add stats
     for c in items:
+        c.setdefault("is_active", True)
         c["leads_count"] = await db.contacts.count_documents({"company_id": c["id"], "type": "lead", "deleted_at": None})
         c["clients_count"] = await db.contacts.count_documents({"company_id": c["id"], "type": "client", "deleted_at": None})
         c["deals_count"] = await db.deals.count_documents({"company_id": c["id"], "deleted_at": None})
@@ -42,13 +42,24 @@ async def list_companies(user: dict = Depends(get_current_user), db=Depends(get_
 @router.post("", status_code=201)
 async def create_company(payload: CompanyCreate, user: dict = Depends(get_current_user), db=Depends(get_db)):
     await _ensure_master(db, user["id"])
+    slug = _slugify(payload.slug or payload.name)
+    # Slug único
+    existing = await db.companies.find_one({"slug": slug, "deleted_at": None})
+    if existing:
+        raise HTTPException(status_code=400, detail="Slug já existe — escolha outro")
     cid = str(uuid.uuid4())
     doc = {
-        "id": cid, "name": payload.name, "slug": payload.slug or _slugify(payload.name),
+        "id": cid, "name": payload.name, "slug": slug,
         "plan": payload.plan or "free", "logo_url": payload.logo_url,
-        "settings": {}, "created_at": _now_iso(), "deleted_at": None,
+        "settings": {}, "is_active": True,
+        "created_at": _now_iso(), "deleted_at": None,
     }
     await db.companies.insert_one(doc)
+    # MASTER do criador também vira MASTER da nova empresa
+    await db.user_companies.insert_one({
+        "user_id": user["id"], "company_id": cid, "role": "MASTER",
+        "is_active": True, "invited_at": _now_iso(), "accepted_at": _now_iso(),
+    })
     doc.pop("_id", None)
     return doc
 
@@ -75,6 +86,7 @@ async def consolidated(user: dict = Depends(get_current_user), db=Depends(get_db
                 won_value += v
         out.append({
             "id": c["id"], "name": c["name"], "slug": c["slug"], "logo_url": c.get("logo_url"),
+            "is_active": c.get("is_active", True),
             "leads": leads, "clients": clients, "deals": deals, "deals_won": won,
             "pipeline_value": round(pipeline_value, 2), "won_value": round(won_value, 2),
         })
@@ -95,7 +107,7 @@ async def consolidated(user: dict = Depends(get_current_user), db=Depends(get_db
 @router.get("/{company_id}")
 async def get_company(company_id: str, user: dict = Depends(get_current_user), db=Depends(get_db)):
     await _ensure_master(db, user["id"])
-    c = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    c = await db.companies.find_one({"id": company_id, "deleted_at": None}, {"_id": 0})
     if not c:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
     return c
@@ -105,14 +117,45 @@ async def get_company(company_id: str, user: dict = Depends(get_current_user), d
 async def update_company(company_id: str, payload: CompanyUpdate, user: dict = Depends(get_current_user), db=Depends(get_db)):
     await _ensure_master(db, user["id"])
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
-    await db.companies.update_one({"id": company_id}, {"$set": update})
+    # Slug é imutável: removemos qualquer tentativa de injetar via dict diretamente
+    update.pop("slug", None)
+    update.pop("id", None)
+    res = await db.companies.update_one(
+        {"id": company_id, "deleted_at": None}, {"$set": update}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
     return await db.companies.find_one({"id": company_id}, {"_id": 0})
+
+
+@router.patch("/{company_id}/activate")
+async def activate_company(company_id: str, user: dict = Depends(get_current_user), db=Depends(get_db)):
+    await _ensure_master(db, user["id"])
+    res = await db.companies.update_one(
+        {"id": company_id, "deleted_at": None}, {"$set": {"is_active": True}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    return {"ok": True, "is_active": True}
+
+
+@router.patch("/{company_id}/deactivate")
+async def deactivate_company(company_id: str, user: dict = Depends(get_current_user), db=Depends(get_db)):
+    await _ensure_master(db, user["id"])
+    res = await db.companies.update_one(
+        {"id": company_id, "deleted_at": None}, {"$set": {"is_active": False}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    return {"ok": True, "is_active": False}
 
 
 @router.delete("/{company_id}", status_code=204)
 async def delete_company(company_id: str, user: dict = Depends(get_current_user), db=Depends(get_db)):
     await _ensure_master(db, user["id"])
-    await db.companies.update_one({"id": company_id}, {"$set": {"deleted_at": _now_iso()}})
+    await db.companies.update_one(
+        {"id": company_id}, {"$set": {"deleted_at": _now_iso(), "is_active": False}}
+    )
     return None
 
 
