@@ -54,7 +54,8 @@ async def seed():
         "slug": "acme",
         "plan": "enterprise",
         "logo_url": "https://images.unsplash.com/photo-1572533717789-543da73adb20?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwxfHxjb3Jwb3JhdGUlMjBjb21wYW55JTIwbG9nbyUyMG1pbmltYWx8ZW58MHx8fHwxNzc3ODE0NTIyfDA&ixlib=rb-4.1.0&q=85",
-        "settings": {}, "is_active": True, "created_at": _now_iso(), "deleted_at": None,
+        "settings": {}, "is_active": True, "is_franchisor": True,
+        "created_at": _now_iso(), "deleted_at": None,
     }
     units = []
     for unit_name in ["Unidade São Paulo", "Unidade Rio de Janeiro", "Unidade Belo Horizonte"]:
@@ -64,7 +65,8 @@ async def seed():
             "slug": unit_name.lower().replace(" ", "-").replace("ã", "a"),
             "plan": "pro",
             "logo_url": "https://images.unsplash.com/photo-1699511051588-94ee6509de71?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwzfHxjb3Jwb3JhdGUlMjBjb21wYW55JTIwbG9nbyUyMG1pbmltYWx8ZW58MHx8fHwxNzc3ODE0NTIyfDA&ixlib=rb-4.1.0&q=85",
-            "settings": {}, "is_active": True, "created_at": _now_iso(), "deleted_at": None,
+            "settings": {}, "is_active": True, "is_franchisor": False,
+            "created_at": _now_iso(), "deleted_at": None,
         })
 
     all_companies = [franqueadora, *units]
@@ -85,12 +87,12 @@ async def seed():
     # Master is MASTER in franqueadora and has access to all units
     memberships = [{
         "user_id": master_user["id"], "company_id": franqueadora["id"], "role": "MASTER",
-        "is_active": True, "invited_at": _now_iso(), "accepted_at": _now_iso(),
+        "modules": [], "is_active": True, "invited_at": _now_iso(), "accepted_at": _now_iso(),
     }]
     for u in units:
         memberships.append({
             "user_id": master_user["id"], "company_id": u["id"], "role": "MASTER",
-            "is_active": True, "invited_at": _now_iso(), "accepted_at": _now_iso(),
+            "modules": [], "is_active": True, "invited_at": _now_iso(), "accepted_at": _now_iso(),
         })
 
     # ---------- Per-unit users ----------
@@ -112,7 +114,8 @@ async def seed():
             unit_users.append({**u, "role": role})
             memberships.append({
                 "user_id": u["id"], "company_id": unit["id"], "role": role,
-                "is_active": True, "invited_at": _now_iso(), "accepted_at": _now_iso(),
+                "modules": [], "is_active": True,
+                "invited_at": _now_iso(), "accepted_at": _now_iso(),
             })
         unit_user_pool[unit["id"]] = unit_users
 

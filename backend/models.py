@@ -43,16 +43,41 @@ class CompanyUpdate(BaseModel):
 # ---------- Users ----------
 Role = Literal["MASTER", "ADMIN", "COMMERCIAL", "ANALYST"]
 
+# Módulos disponíveis. Lista vazia ou ausente = acesso total.
+ALL_MODULES = [
+    "dashboard",
+    "contacts",
+    "pipeline",
+    "tasks",
+    "analytics",
+    "settings",
+    "admin_users",
+    "admin_companies",
+]
+
 
 class UserInvite(BaseModel):
     email: EmailStr
     name: str
     role: Role
     password: str = "changeme123"
+    modules: list[str] = Field(default_factory=list)
+    # Apenas válido quando o convite é feito a partir da franqueadora.
+    additional_company_ids: list[str] = Field(default_factory=list)
 
 
 class UserRoleUpdate(BaseModel):
     role: Role
+
+
+class UserModulesUpdate(BaseModel):
+    modules: list[str]
+
+
+class GrantCompanyAccess(BaseModel):
+    company_id: str
+    role: Role
+    modules: list[str] = Field(default_factory=list)
 
 
 class ProfileUpdate(BaseModel):

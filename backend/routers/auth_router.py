@@ -53,8 +53,21 @@ async def _user_companies_payload(db, user_id: str) -> list[dict]:
     for m in memberships:
         c = by_id.get(m["company_id"])
         if c:
-            out.append({**c, "role": m["role"]})
+            out.append({
+                **c,
+                "is_franchisor": c.get("is_franchisor", False),
+                "role": m["role"],
+                "modules": m.get("modules", []),
+            })
     return out
+
+
+async def _membership_modules(db, user_id: str, company_id: str) -> list[str]:
+    m = await db.user_companies.find_one(
+        {"user_id": user_id, "company_id": company_id, "is_active": True},
+        {"_id": 0, "modules": 1},
+    )
+    return (m or {}).get("modules") or []
 
 
 @router.post("/login")
@@ -150,6 +163,7 @@ async def switch_company(
         "access_token": access,
         "active_company_id": payload.company_id,
         "active_role": membership["role"],
+        "active_modules": membership.get("modules") or [],
         "company": company,
     }
 
@@ -157,11 +171,14 @@ async def switch_company(
 @router.get("/me")
 async def me(user: dict = Depends(get_current_user), db=Depends(get_db)):
     companies = await _user_companies_payload(db, user["id"])
+    active_company_id = user.get("_jwt_company_id")
+    active_modules = await _membership_modules(db, user["id"], active_company_id) if active_company_id else []
     return {
         "user": {k: v for k, v in user.items() if not k.startswith("_jwt")},
         "companies": companies,
-        "active_company_id": user.get("_jwt_company_id"),
+        "active_company_id": active_company_id,
         "active_role": user.get("_jwt_role"),
+        "active_modules": active_modules,
     }
 
 
