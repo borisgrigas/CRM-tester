@@ -17,94 +17,122 @@ def _now_iso() -> str:
 
 
 @router.get("")
-async def list_pipelines(membership: dict = Depends(get_current_company), db=Depends(get_db)):
-    pipelines = await db.pipelines.find(
-        {"company_id": membership["company_id"], "deleted_at": None}, {"_id": 0}
-    ).to_list(50)
+async def list_pipelines(membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    p_rows = await conn.fetch(
+        "SELECT * FROM pipelines WHERE company_id = $1 AND deleted_at IS NULL",
+        membership["company_id"],
+    )
     out = []
-    for p in pipelines:
-        stages = await db.pipeline_stages.find(
-            {"pipeline_id": p["id"], "deleted_at": None}, {"_id": 0}
-        ).sort("position", 1).to_list(50)
-        out.append({**p, "stages": stages})
+    for p in p_rows:
+        s_rows = await conn.fetch(
+            "SELECT * FROM pipeline_stages WHERE pipeline_id = $1 AND deleted_at IS NULL ORDER BY position ASC",
+            p["id"],
+        )
+        out.append({**dict(p), "stages": [dict(s) for s in s_rows]})
     return {"items": out}
 
 
 @router.post("", status_code=201, dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def create_pipeline(payload: PipelineCreate, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def create_pipeline(payload: PipelineCreate, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     pid = str(uuid.uuid4())
-    doc = {
-        "id": pid, "company_id": membership["company_id"],
-        "name": payload.name, "is_default": payload.is_default,
-        "created_at": _now_iso(), "deleted_at": None,
-    }
-    await db.pipelines.insert_one(doc)
-    doc.pop("_id", None)
-    return {**doc, "stages": []}
+    now = _now_iso()
+    await conn.execute(
+        "INSERT INTO pipelines (id, company_id, name, is_default, created_at, deleted_at) VALUES ($1,$2,$3,$4,$5,$6)",
+        pid, membership["company_id"], payload.name, payload.is_default, now, None,
+    )
+    row = await conn.fetchrow("SELECT * FROM pipelines WHERE id = $1", pid)
+    return {**dict(row), "stages": []}
 
 
 @router.put("/{pipeline_id}", dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def update_pipeline(pipeline_id: str, payload: PipelineUpdate, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def update_pipeline(pipeline_id: str, payload: PipelineUpdate, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
-    res = await db.pipelines.update_one(
-        {"id": pipeline_id, "company_id": membership["company_id"]}, {"$set": update}
+    if not update:
+        row = await conn.fetchrow("SELECT * FROM pipelines WHERE id = $1", pipeline_id)
+        return dict(row) if row else {}
+
+    set_parts = []
+    params: list = []
+    n = 1
+    for k, v in update.items():
+        set_parts.append(f"{k} = ${n}")
+        params.append(v)
+        n += 1
+    params.extend([pipeline_id, membership["company_id"]])
+    result = await conn.execute(
+        f"UPDATE pipelines SET {', '.join(set_parts)} WHERE id = ${n} AND company_id = ${n + 1}",
+        *params,
     )
-    if res.matched_count == 0:
+    if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Pipeline não encontrado")
-    return await db.pipelines.find_one({"id": pipeline_id}, {"_id": 0})
+    row = await conn.fetchrow("SELECT * FROM pipelines WHERE id = $1", pipeline_id)
+    return dict(row)
 
 
 @router.delete("/{pipeline_id}", status_code=204, dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def delete_pipeline(pipeline_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
-    await db.pipelines.update_one(
-        {"id": pipeline_id, "company_id": membership["company_id"]},
-        {"$set": {"deleted_at": _now_iso()}},
+async def delete_pipeline(pipeline_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    await conn.execute(
+        "UPDATE pipelines SET deleted_at = $1 WHERE id = $2 AND company_id = $3",
+        _now_iso(), pipeline_id, membership["company_id"],
     )
     return None
 
 
 @router.post("/{pipeline_id}/stages", status_code=201, dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def create_stage(pipeline_id: str, payload: StageCreate, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def create_stage(pipeline_id: str, payload: StageCreate, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     sid = str(uuid.uuid4())
-    doc = {
-        "id": sid, "pipeline_id": pipeline_id, "company_id": membership["company_id"],
-        "name": payload.name, "position": payload.position,
-        "conversion_probability": payload.conversion_probability,
-        "color": payload.color, "sla_hours": payload.sla_hours,
-        "created_at": _now_iso(), "deleted_at": None,
-    }
-    await db.pipeline_stages.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+    now = _now_iso()
+    await conn.execute(
+        """INSERT INTO pipeline_stages
+           (id, pipeline_id, company_id, name, position, conversion_probability, color, sla_hours, created_at, deleted_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)""",
+        sid, pipeline_id, membership["company_id"], payload.name, payload.position,
+        payload.conversion_probability, payload.color, payload.sla_hours, now, None,
+    )
+    row = await conn.fetchrow("SELECT * FROM pipeline_stages WHERE id = $1", sid)
+    return dict(row)
 
 
 @router.put("/{pipeline_id}/stages", dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
 async def reorder_stages(
     pipeline_id: str, items: List[StageReorderItem] = Body(...),
-    membership: dict = Depends(get_current_company), db=Depends(get_db),
+    membership: dict = Depends(get_current_company), conn=Depends(get_db),
 ):
     for it in items:
-        await db.pipeline_stages.update_one(
-            {"id": it.id, "pipeline_id": pipeline_id, "company_id": membership["company_id"]},
-            {"$set": {"position": it.position}},
+        await conn.execute(
+            "UPDATE pipeline_stages SET position = $1 WHERE id = $2 AND pipeline_id = $3 AND company_id = $4",
+            it.position, it.id, pipeline_id, membership["company_id"],
         )
     return {"ok": True}
 
 
 @router.put("/{pipeline_id}/stages/{stage_id}", dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def update_stage(pipeline_id: str, stage_id: str, payload: StageUpdate, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def update_stage(pipeline_id: str, stage_id: str, payload: StageUpdate, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
-    await db.pipeline_stages.update_one(
-        {"id": stage_id, "pipeline_id": pipeline_id, "company_id": membership["company_id"]},
-        {"$set": update},
+    if not update:
+        row = await conn.fetchrow("SELECT * FROM pipeline_stages WHERE id = $1", stage_id)
+        return dict(row) if row else {}
+
+    set_parts = []
+    params: list = []
+    n = 1
+    for k, v in update.items():
+        set_parts.append(f"{k} = ${n}")
+        params.append(v)
+        n += 1
+    params.extend([stage_id, pipeline_id, membership["company_id"]])
+    await conn.execute(
+        f"UPDATE pipeline_stages SET {', '.join(set_parts)} WHERE id = ${n} AND pipeline_id = ${n + 1} AND company_id = ${n + 2}",
+        *params,
     )
-    return await db.pipeline_stages.find_one({"id": stage_id}, {"_id": 0})
+    row = await conn.fetchrow("SELECT * FROM pipeline_stages WHERE id = $1", stage_id)
+    return dict(row)
 
 
 @router.delete("/{pipeline_id}/stages/{stage_id}", status_code=204, dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def delete_stage(pipeline_id: str, stage_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
-    await db.pipeline_stages.update_one(
-        {"id": stage_id, "pipeline_id": pipeline_id, "company_id": membership["company_id"]},
-        {"$set": {"deleted_at": _now_iso()}},
+async def delete_stage(pipeline_id: str, stage_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    await conn.execute(
+        "UPDATE pipeline_stages SET deleted_at = $1 WHERE id = $2 AND pipeline_id = $3 AND company_id = $4",
+        _now_iso(), stage_id, pipeline_id, membership["company_id"],
     )
     return None

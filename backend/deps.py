@@ -8,7 +8,7 @@ from auth_utils import decode_token
 from db import get_db
 
 
-async def get_current_user(request: Request, db=Depends(get_db)) -> dict:
+async def get_current_user(request: Request, conn=Depends(get_db)) -> dict:
     token = request.cookies.get("access_token")
     if not token:
         auth = request.headers.get("Authorization", "")
@@ -25,37 +25,41 @@ async def get_current_user(request: Request, db=Depends(get_db)) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
-    if not user:
+    row = await conn.fetchrow(
+        "SELECT id, name, email, avatar_url, created_at, deleted_at FROM users WHERE id = $1",
+        payload["sub"],
+    )
+    if not row:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
 
+    user = dict(row)
     user["_jwt_company_id"] = payload.get("company_id")
     user["_jwt_role"] = payload.get("role")
     return user
 
 
-async def get_current_company(user: dict = Depends(get_current_user), db=Depends(get_db)) -> dict:
-    """Returns membership dict {user_id, company_id, role, modules, ...}.
-    Raises if user has no active company, ou se a empresa estiver inativa/deletada."""
+async def get_current_company(user: dict = Depends(get_current_user), conn=Depends(get_db)) -> dict:
+    """Returns membership dict. Raises if user has no active company or company is inactive/deleted."""
     company_id = user.get("_jwt_company_id")
     if not company_id:
         raise HTTPException(status_code=400, detail="Nenhuma empresa selecionada")
 
-    membership = await db.user_companies.find_one(
-        {"user_id": user["id"], "company_id": company_id, "is_active": True},
-        {"_id": 0},
+    membership_row = await conn.fetchrow(
+        "SELECT * FROM user_companies WHERE user_id = $1 AND company_id = $2 AND is_active = TRUE",
+        user["id"], company_id,
     )
-    if not membership:
+    if not membership_row:
         raise HTTPException(status_code=403, detail="Acesso negado a esta empresa")
 
-    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
-    if not company or company.get("deleted_at") is not None:
+    company_row = await conn.fetchrow("SELECT * FROM companies WHERE id = $1", company_id)
+    if not company_row or company_row["deleted_at"] is not None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
-    if company.get("is_active") is False:
+    if not company_row["is_active"]:
         raise HTTPException(status_code=403, detail="Empresa inativa")
 
+    membership = dict(membership_row)
     membership.setdefault("modules", [])
-    membership["_company"] = company
+    membership["_company"] = dict(company_row)
     return membership
 
 
@@ -71,8 +75,8 @@ def require_roles(*allowed_roles: str):
 
 
 def require_module(module: str):
-    """Bloqueia se a membership tiver lista de módulos que não inclui o solicitado.
-    Lista vazia/ausente = acesso total."""
+    """Blocks if the membership has a modules list that does not include the requested module.
+    Empty/absent list = full access."""
 
     async def checker(membership: dict = Depends(get_current_company)) -> dict:
         modules = membership.get("modules") or []
@@ -83,28 +87,27 @@ def require_module(module: str):
     return checker
 
 
-async def require_franchisor_master(user: dict = Depends(get_current_user), db=Depends(get_db)) -> dict:
-    """Apenas usuários MASTER da franqueadora podem operar este recurso.
-    Requer que (a) o usuário tenha membership com role=MASTER em uma empresa is_franchisor=True
-    e (b) o JWT ativo aponte para essa franqueadora."""
+async def require_franchisor_master(user: dict = Depends(get_current_user), conn=Depends(get_db)) -> dict:
+    """Only MASTER users of the franchisor company may use this resource."""
     active_company_id = user.get("_jwt_company_id")
     if not active_company_id:
         raise HTTPException(status_code=400, detail="Nenhuma empresa selecionada")
 
-    active_company = await db.companies.find_one(
-        {"id": active_company_id, "deleted_at": None}, {"_id": 0}
+    company_row = await conn.fetchrow(
+        "SELECT * FROM companies WHERE id = $1 AND deleted_at IS NULL", active_company_id
     )
-    if not active_company or not active_company.get("is_franchisor"):
+    if not company_row or not company_row["is_franchisor"]:
         raise HTTPException(status_code=403, detail="Apenas a franqueadora pode realizar esta ação")
 
-    membership = await db.user_companies.find_one(
-        {"user_id": user["id"], "company_id": active_company_id, "role": "MASTER", "is_active": True},
-        {"_id": 0},
+    membership_row = await conn.fetchrow(
+        "SELECT * FROM user_companies WHERE user_id = $1 AND company_id = $2 AND role = 'MASTER' AND is_active = TRUE",
+        user["id"], active_company_id,
     )
-    if not membership:
+    if not membership_row:
         raise HTTPException(status_code=403, detail="Apenas MASTER da franqueadora")
     return user
 
 
-async def get_franchisor(db) -> Optional[dict]:
-    return await db.companies.find_one({"is_franchisor": True, "deleted_at": None}, {"_id": 0})
+async def get_franchisor(conn) -> Optional[dict]:
+    row = await conn.fetchrow("SELECT * FROM companies WHERE is_franchisor = TRUE AND deleted_at IS NULL")
+    return dict(row) if row else None

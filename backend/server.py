@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import APIRouter, Depends, FastAPI  # noqa: E402
+from fastapi import APIRouter, FastAPI  # noqa: E402
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
-from db import get_client, get_db  # noqa: E402
+from db import close_pool, init_pool  # noqa: E402
 from routers import (  # noqa: E402
     analytics_router,
     auth_router,
@@ -26,20 +26,9 @@ from routers import (  # noqa: E402
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db = get_db()
-    try:
-        await db.users.create_index("email", unique=True)
-    except Exception:
-        pass
-    try:
-        await db.contacts.create_index([("company_id", 1), ("type", 1)])
-        await db.deals.create_index([("company_id", 1), ("pipeline_id", 1), ("stage_id", 1)])
-        await db.contact_activities.create_index([("contact_id", 1), ("occurred_at", -1)])
-        await db.user_companies.create_index([("user_id", 1), ("company_id", 1)], unique=True)
-    except Exception:
-        pass
+    await init_pool()
     yield
-    get_client().close()
+    await close_pool()
 
 
 app = FastAPI(title="CRM SaaS Multi-Tenant", version="1.0.0", lifespan=lifespan)

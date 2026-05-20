@@ -22,19 +22,38 @@ async def list_tasks(
     priority: Optional[str] = None,
     assigned_to: Optional[str] = None,
     membership: dict = Depends(get_current_company),
-    db=Depends(get_db),
+    conn=Depends(get_db),
 ):
-    f = {"company_id": membership["company_id"]}
+    conditions = ["company_id = $1"]
+    params: list = [membership["company_id"]]
+    n = 2
+
     if membership["role"] == "COMMERCIAL":
-        f["assigned_to"] = membership["user_id"]
+        conditions.append(f"assigned_to = ${n}")
+        params.append(membership["user_id"])
+        n += 1
+
     if status:
-        f["status"] = status
+        conditions.append(f"status = ${n}")
+        params.append(status)
+        n += 1
+
     if priority:
-        f["priority"] = priority
+        conditions.append(f"priority = ${n}")
+        params.append(priority)
+        n += 1
+
     if assigned_to:
-        f["assigned_to"] = assigned_to
-    items = await db.tasks.find(f, {"_id": 0}).sort("due_date", 1).limit(500).to_list(500)
-    return {"items": items}
+        conditions.append(f"assigned_to = ${n}")
+        params.append(assigned_to)
+        n += 1
+
+    where = " AND ".join(conditions)
+    rows = await conn.fetch(
+        f"SELECT * FROM tasks WHERE {where} ORDER BY due_date ASC NULLS LAST LIMIT 500",
+        *params,
+    )
+    return {"items": [dict(r) for r in rows]}
 
 
 @router.post("", status_code=201)
@@ -42,49 +61,66 @@ async def create_task(
     payload: TaskCreate,
     user: dict = Depends(get_current_user),
     membership: dict = Depends(get_current_company),
-    db=Depends(get_db),
+    conn=Depends(get_db),
 ):
     if membership["role"] == "ANALYST":
         raise HTTPException(status_code=403, detail="ANALYST não pode criar")
     tid = str(uuid.uuid4())
-    doc = {
-        "id": tid,
-        "company_id": membership["company_id"],
-        "created_by": user["id"],
-        "status": "pending",
-        "completed_at": None,
-        "created_at": _now_iso(),
-        "updated_at": _now_iso(),
-        **payload.model_dump(),
-    }
-    await db.tasks.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
+    now = _now_iso()
+    data = payload.model_dump()
+    await conn.execute(
+        """INSERT INTO tasks
+           (id, company_id, title, description, contact_id, deal_id, assigned_to, created_by,
+            due_date, priority, status, completed_at, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)""",
+        tid, membership["company_id"], data["title"], data.get("description"),
+        data.get("contact_id"), data.get("deal_id"), data.get("assigned_to"), user["id"],
+        data.get("due_date"), data.get("priority", "medium"), "pending", None, now, now,
+    )
+    row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", tid)
+    return dict(row)
 
 
 @router.put("/{task_id}")
-async def update_task(task_id: str, payload: TaskUpdate, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def update_task(task_id: str, payload: TaskUpdate, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not update:
+        row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
+        return dict(row) if row else {}
+
     update["updated_at"] = _now_iso()
-    res = await db.tasks.update_one(
-        {"id": task_id, "company_id": membership["company_id"]}, {"$set": update}
+    set_parts = []
+    params: list = []
+    n = 1
+    for k, v in update.items():
+        set_parts.append(f"{k} = ${n}")
+        params.append(v)
+        n += 1
+    params.extend([task_id, membership["company_id"]])
+    result = await conn.execute(
+        f"UPDATE tasks SET {', '.join(set_parts)} WHERE id = ${n} AND company_id = ${n + 1}",
+        *params,
     )
-    if res.matched_count == 0:
+    if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Tarefa não encontrada")
-    return await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
+    return dict(row)
 
 
 @router.patch("/{task_id}/complete")
-async def complete_task(task_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def complete_task(task_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     now = _now_iso()
-    await db.tasks.update_one(
-        {"id": task_id, "company_id": membership["company_id"]},
-        {"$set": {"status": "done", "completed_at": now, "updated_at": now}},
+    await conn.execute(
+        "UPDATE tasks SET status = 'done', completed_at = $1, updated_at = $1 WHERE id = $2 AND company_id = $3",
+        now, task_id, membership["company_id"],
     )
-    return await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
+    return dict(row) if row else {}
 
 
 @router.delete("/{task_id}", status_code=204)
-async def delete_task(task_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
-    await db.tasks.delete_one({"id": task_id, "company_id": membership["company_id"]})
+async def delete_task(task_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    await conn.execute(
+        "DELETE FROM tasks WHERE id = $1 AND company_id = $2", task_id, membership["company_id"]
+    )
     return None

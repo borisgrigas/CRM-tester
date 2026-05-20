@@ -1,4 +1,4 @@
-"""Users + profile router (com gestão de membros, módulos e multi-empresa)."""
+"""Users + profile router (member management, modules, multi-company)."""
 import uuid
 from datetime import datetime, timezone
 
@@ -30,9 +30,10 @@ def _validate_modules(modules: list[str]) -> list[str]:
     return modules
 
 
-async def _enforce_admin_protection(db, target_user_id: str, company_id: str, actor_role: str):
-    target = await db.user_companies.find_one(
-        {"user_id": target_user_id, "company_id": company_id}, {"_id": 0, "role": 1}
+async def _enforce_admin_protection(conn, target_user_id: str, company_id: str, actor_role: str):
+    target = await conn.fetchrow(
+        "SELECT role FROM user_companies WHERE user_id = $1 AND company_id = $2",
+        target_user_id, company_id,
     )
     if not target:
         raise HTTPException(status_code=404, detail="Membro não encontrado")
@@ -41,85 +42,90 @@ async def _enforce_admin_protection(db, target_user_id: str, company_id: str, ac
     return target
 
 
-async def _ensure_not_last_active_admin(db, target_user_id: str, company_id: str):
-    target = await db.user_companies.find_one(
-        {"user_id": target_user_id, "company_id": company_id}, {"_id": 0, "role": 1, "is_active": 1}
+async def _ensure_not_last_active_admin(conn, target_user_id: str, company_id: str):
+    target = await conn.fetchrow(
+        "SELECT role, is_active FROM user_companies WHERE user_id = $1 AND company_id = $2",
+        target_user_id, company_id,
     )
-    if not target or target["role"] != "ADMIN" or not target.get("is_active"):
+    if not target or target["role"] != "ADMIN" or not target["is_active"]:
         return
-    active_admins = await db.user_companies.count_documents(
-        {"company_id": company_id, "role": "ADMIN", "is_active": True}
+    active_admins = await conn.fetchval(
+        "SELECT COUNT(*) FROM user_companies WHERE company_id = $1 AND role = 'ADMIN' AND is_active = TRUE",
+        company_id,
     )
     if active_admins <= 1:
         raise HTTPException(status_code=400, detail="Não é possível inativar o último ADMIN ativo")
 
 
-async def _is_franchisor_context(db, company_id: str) -> bool:
-    company = await db.companies.find_one({"id": company_id, "deleted_at": None}, {"_id": 0, "is_franchisor": 1})
-    return bool(company and company.get("is_franchisor"))
+async def _is_franchisor_context(conn, company_id: str) -> bool:
+    row = await conn.fetchrow(
+        "SELECT is_franchisor FROM companies WHERE id = $1 AND deleted_at IS NULL", company_id
+    )
+    return bool(row and row["is_franchisor"])
 
 
 @router.get("/users")
-async def list_users(membership: dict = Depends(get_current_company), db=Depends(get_db)):
-    memberships = await db.user_companies.find(
-        {"company_id": membership["company_id"]}, {"_id": 0}
-    ).to_list(500)
-    user_ids = [m["user_id"] for m in memberships]
-    users = await db.users.find(
-        {"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0}
-    ).to_list(500)
-    by_id = {u["id"]: u for u in users}
+async def list_users(membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    m_rows = await conn.fetch(
+        "SELECT * FROM user_companies WHERE company_id = $1", membership["company_id"]
+    )
+    user_ids = [m["user_id"] for m in m_rows]
+    u_rows = await conn.fetch(
+        "SELECT id, name, email, avatar_url, created_at FROM users WHERE id = ANY($1)", user_ids
+    ) if user_ids else []
+    by_id = {u["id"]: dict(u) for u in u_rows}
+
     items = []
-    for m in memberships:
-        # Empresas adicionais a que o usuário tem acesso (apenas para visão da franqueadora)
-        other = await db.user_companies.find(
-            {"user_id": m["user_id"], "is_active": True, "company_id": {"$ne": membership["company_id"]}},
-            {"_id": 0, "company_id": 1, "role": 1},
-        ).to_list(50)
+    for m in m_rows:
+        other = await conn.fetch(
+            "SELECT company_id FROM user_companies WHERE user_id = $1 AND is_active = TRUE AND company_id != $2",
+            m["user_id"], membership["company_id"],
+        )
         items.append({
             **by_id.get(m["user_id"], {"id": m["user_id"], "name": "—", "email": "", "avatar_url": None}),
             "role": m["role"],
-            "is_active": m.get("is_active", True),
-            "modules": m.get("modules", []),
-            "invited_at": m.get("invited_at"),
-            "accepted_at": m.get("accepted_at"),
+            "is_active": m["is_active"],
+            "modules": m["modules"] or [],
+            "invited_at": m["invited_at"],
+            "accepted_at": m["accepted_at"],
             "other_company_ids": [o["company_id"] for o in other],
         })
     return {"items": items}
 
 
 @router.post("/users/invite", status_code=201, dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def invite_user(payload: UserInvite, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def invite_user(payload: UserInvite, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     if membership["role"] == "ADMIN" and payload.role in ("ADMIN", "MASTER"):
         raise HTTPException(status_code=403, detail="ADMIN não pode convidar ADMIN/MASTER")
     _validate_modules(payload.modules)
 
     email = payload.email.lower().strip()
-    existing = await db.users.find_one({"email": email})
+    existing = await conn.fetchrow("SELECT id FROM users WHERE email = $1", email)
     if existing:
         user_id = existing["id"]
     else:
         user_id = str(uuid.uuid4())
-        await db.users.insert_one({
-            "id": user_id, "name": payload.name, "email": email,
-            "password_hash": hash_password(payload.password),
-            "avatar_url": None, "created_at": _now_iso(), "deleted_at": None,
-        })
-    already = await db.user_companies.find_one(
-        {"user_id": user_id, "company_id": membership["company_id"]}
+        await conn.execute(
+            "INSERT INTO users (id, name, email, password_hash, avatar_url, created_at, deleted_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+            user_id, payload.name, email, hash_password(payload.password), None, _now_iso(), None,
+        )
+
+    already = await conn.fetchrow(
+        "SELECT 1 FROM user_companies WHERE user_id = $1 AND company_id = $2",
+        user_id, membership["company_id"],
     )
     if already:
         raise HTTPException(status_code=400, detail="Usuário já é membro desta empresa")
-    await db.user_companies.insert_one({
-        "user_id": user_id, "company_id": membership["company_id"],
-        "role": payload.role, "modules": payload.modules, "is_active": True,
-        "invited_at": _now_iso(), "accepted_at": _now_iso(),
-    })
 
-    # Multi-empresa: SOMENTE quando o convite parte da franqueadora
+    now = _now_iso()
+    await conn.execute(
+        "INSERT INTO user_companies (user_id, company_id, role, modules, is_active, invited_at, accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        user_id, membership["company_id"], payload.role, payload.modules, True, now, now,
+    )
+
     granted_extras: list[str] = []
     if payload.additional_company_ids:
-        is_franchisor = await _is_franchisor_context(db, membership["company_id"])
+        is_franchisor = await _is_franchisor_context(conn, membership["company_id"])
         if not is_franchisor:
             raise HTTPException(
                 status_code=403,
@@ -128,17 +134,16 @@ async def invite_user(payload: UserInvite, membership: dict = Depends(get_curren
         for cid in payload.additional_company_ids:
             if cid == membership["company_id"]:
                 continue
-            target = await db.companies.find_one({"id": cid, "deleted_at": None}, {"_id": 0, "id": 1})
-            if not target:
+            target_co = await conn.fetchrow("SELECT id FROM companies WHERE id = $1 AND deleted_at IS NULL", cid)
+            if not target_co:
                 continue
-            exists = await db.user_companies.find_one({"user_id": user_id, "company_id": cid})
+            exists = await conn.fetchrow("SELECT 1 FROM user_companies WHERE user_id = $1 AND company_id = $2", user_id, cid)
             if exists:
                 continue
-            await db.user_companies.insert_one({
-                "user_id": user_id, "company_id": cid,
-                "role": payload.role, "modules": payload.modules, "is_active": True,
-                "invited_at": _now_iso(), "accepted_at": _now_iso(),
-            })
+            await conn.execute(
+                "INSERT INTO user_companies (user_id, company_id, role, modules, is_active, invited_at, accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+                user_id, cid, payload.role, payload.modules, True, now, now,
+            )
             granted_extras.append(cid)
 
     print(f"[INVITE] activation link for {email}: /accept-invite?token={uuid.uuid4()}")
@@ -150,126 +155,125 @@ async def invite_user(payload: UserInvite, membership: dict = Depends(get_curren
 
 
 @router.put("/users/{user_id}/role", dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def update_role(user_id: str, payload: UserRoleUpdate, membership: dict = Depends(get_current_company), db=Depends(get_db)):
-    await _enforce_admin_protection(db, user_id, membership["company_id"], membership["role"])
+async def update_role(user_id: str, payload: UserRoleUpdate, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    await _enforce_admin_protection(conn, user_id, membership["company_id"], membership["role"])
     if membership["role"] == "ADMIN" and payload.role in ("ADMIN", "MASTER"):
         raise HTTPException(status_code=403, detail="ADMIN não pode promover para ADMIN/MASTER")
     if payload.role != "ADMIN":
-        await _ensure_not_last_active_admin(db, user_id, membership["company_id"])
-    res = await db.user_companies.update_one(
-        {"user_id": user_id, "company_id": membership["company_id"]},
-        {"$set": {"role": payload.role}},
+        await _ensure_not_last_active_admin(conn, user_id, membership["company_id"])
+    result = await conn.execute(
+        "UPDATE user_companies SET role = $1 WHERE user_id = $2 AND company_id = $3",
+        payload.role, user_id, membership["company_id"],
     )
-    if res.matched_count == 0:
+    if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Membro não encontrado")
     return {"ok": True, "role": payload.role}
 
 
 @router.put("/users/{user_id}/modules", dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def update_modules(user_id: str, payload: UserModulesUpdate, membership: dict = Depends(get_current_company), db=Depends(get_db)):
-    await _enforce_admin_protection(db, user_id, membership["company_id"], membership["role"])
+async def update_modules(user_id: str, payload: UserModulesUpdate, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    await _enforce_admin_protection(conn, user_id, membership["company_id"], membership["role"])
     _validate_modules(payload.modules)
-    res = await db.user_companies.update_one(
-        {"user_id": user_id, "company_id": membership["company_id"]},
-        {"$set": {"modules": payload.modules}},
+    result = await conn.execute(
+        "UPDATE user_companies SET modules = $1 WHERE user_id = $2 AND company_id = $3",
+        payload.modules, user_id, membership["company_id"],
     )
-    if res.matched_count == 0:
+    if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Membro não encontrado")
     return {"ok": True, "modules": payload.modules}
 
 
 @router.patch("/users/{user_id}/activate", dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def activate_user(user_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
-    await _enforce_admin_protection(db, user_id, membership["company_id"], membership["role"])
-    res = await db.user_companies.update_one(
-        {"user_id": user_id, "company_id": membership["company_id"]},
-        {"$set": {"is_active": True}},
+async def activate_user(user_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    await _enforce_admin_protection(conn, user_id, membership["company_id"], membership["role"])
+    result = await conn.execute(
+        "UPDATE user_companies SET is_active = TRUE WHERE user_id = $1 AND company_id = $2",
+        user_id, membership["company_id"],
     )
-    if res.matched_count == 0:
+    if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Membro não encontrado")
     return {"ok": True, "is_active": True}
 
 
 @router.patch("/users/{user_id}/deactivate", dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def deactivate_user(user_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def deactivate_user(user_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     if user_id == membership["user_id"]:
         raise HTTPException(status_code=400, detail="Você não pode inativar a si mesmo")
-    await _enforce_admin_protection(db, user_id, membership["company_id"], membership["role"])
-    await _ensure_not_last_active_admin(db, user_id, membership["company_id"])
-    res = await db.user_companies.update_one(
-        {"user_id": user_id, "company_id": membership["company_id"]},
-        {"$set": {"is_active": False}},
+    await _enforce_admin_protection(conn, user_id, membership["company_id"], membership["role"])
+    await _ensure_not_last_active_admin(conn, user_id, membership["company_id"])
+    result = await conn.execute(
+        "UPDATE user_companies SET is_active = FALSE WHERE user_id = $1 AND company_id = $2",
+        user_id, membership["company_id"],
     )
-    if res.matched_count == 0:
+    if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Membro não encontrado")
     return {"ok": True, "is_active": False}
 
 
 @router.delete("/users/{user_id}", status_code=204, dependencies=[Depends(require_roles("MASTER", "ADMIN"))])
-async def remove_user(user_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
+async def remove_user(user_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     if user_id == membership["user_id"]:
         raise HTTPException(status_code=400, detail="Você não pode remover a si mesmo")
-    await _enforce_admin_protection(db, user_id, membership["company_id"], membership["role"])
-    await _ensure_not_last_active_admin(db, user_id, membership["company_id"])
-    await db.user_companies.delete_one(
-        {"user_id": user_id, "company_id": membership["company_id"]}
+    await _enforce_admin_protection(conn, user_id, membership["company_id"], membership["role"])
+    await _ensure_not_last_active_admin(conn, user_id, membership["company_id"])
+    await conn.execute(
+        "DELETE FROM user_companies WHERE user_id = $1 AND company_id = $2",
+        user_id, membership["company_id"],
     )
     return None
 
 
-# --------- Multi-empresa: apenas via franqueadora ---------
-
 @router.post("/users/{user_id}/grant-company", dependencies=[Depends(require_roles("MASTER"))])
 async def grant_company_access(
     user_id: str, payload: GrantCompanyAccess,
-    membership: dict = Depends(get_current_company), db=Depends(get_db),
+    membership: dict = Depends(get_current_company), conn=Depends(get_db),
 ):
-    """Apenas no contexto da franqueadora um MASTER pode dar acesso a outra empresa."""
-    is_franchisor = await _is_franchisor_context(db, membership["company_id"])
+    is_franchisor = await _is_franchisor_context(conn, membership["company_id"])
     if not is_franchisor:
         raise HTTPException(status_code=403, detail="Apenas a franqueadora pode estender acesso a múltiplas empresas")
     if payload.company_id == membership["company_id"]:
         raise HTTPException(status_code=400, detail="Use as ações de papel/módulos para a empresa atual")
-    target = await db.companies.find_one({"id": payload.company_id, "deleted_at": None}, {"_id": 0, "id": 1})
-    if not target:
+    target_co = await conn.fetchrow("SELECT id FROM companies WHERE id = $1 AND deleted_at IS NULL", payload.company_id)
+    if not target_co:
         raise HTTPException(status_code=404, detail="Empresa destino não encontrada")
-    user_doc = await db.users.find_one({"id": user_id})
+    user_doc = await conn.fetchrow("SELECT id FROM users WHERE id = $1", user_id)
     if not user_doc:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     _validate_modules(payload.modules)
 
-    existing = await db.user_companies.find_one({"user_id": user_id, "company_id": payload.company_id})
+    existing = await conn.fetchrow(
+        "SELECT 1 FROM user_companies WHERE user_id = $1 AND company_id = $2", user_id, payload.company_id
+    )
+    now = _now_iso()
     if existing:
-        await db.user_companies.update_one(
-            {"user_id": user_id, "company_id": payload.company_id},
-            {"$set": {"role": payload.role, "modules": payload.modules, "is_active": True}},
+        await conn.execute(
+            "UPDATE user_companies SET role = $1, modules = $2, is_active = TRUE WHERE user_id = $3 AND company_id = $4",
+            payload.role, payload.modules, user_id, payload.company_id,
         )
         return {"ok": True, "updated": True}
-    await db.user_companies.insert_one({
-        "user_id": user_id, "company_id": payload.company_id,
-        "role": payload.role, "modules": payload.modules, "is_active": True,
-        "invited_at": _now_iso(), "accepted_at": _now_iso(),
-    })
+    await conn.execute(
+        "INSERT INTO user_companies (user_id, company_id, role, modules, is_active, invited_at, accepted_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        user_id, payload.company_id, payload.role, payload.modules, True, now, now,
+    )
     return {"ok": True, "created": True}
 
 
 @router.delete("/users/{user_id}/revoke-company/{company_id}", status_code=204, dependencies=[Depends(require_roles("MASTER"))])
 async def revoke_company_access(
     user_id: str, company_id: str,
-    membership: dict = Depends(get_current_company), db=Depends(get_db),
+    membership: dict = Depends(get_current_company), conn=Depends(get_db),
 ):
-    is_franchisor = await _is_franchisor_context(db, membership["company_id"])
+    is_franchisor = await _is_franchisor_context(conn, membership["company_id"])
     if not is_franchisor:
         raise HTTPException(status_code=403, detail="Apenas a franqueadora pode revogar acesso a outras empresas")
     if company_id == membership["company_id"]:
         raise HTTPException(status_code=400, detail="Use DELETE /users/:id para a empresa atual")
-    # Não permitir remover o último ADMIN ativo da empresa destino
-    await _ensure_not_last_active_admin(db, user_id, company_id)
-    await db.user_companies.delete_one({"user_id": user_id, "company_id": company_id})
+    await _ensure_not_last_active_admin(conn, user_id, company_id)
+    await conn.execute(
+        "DELETE FROM user_companies WHERE user_id = $1 AND company_id = $2", user_id, company_id
+    )
     return None
 
-
-# --------- Profile ---------
 
 @router.get("/profile")
 async def get_profile(user: dict = Depends(get_current_user)):
@@ -277,13 +281,20 @@ async def get_profile(user: dict = Depends(get_current_user)):
 
 
 @router.put("/profile")
-async def update_profile(payload: ProfileUpdate, user: dict = Depends(get_current_user), db=Depends(get_db)):
+async def update_profile(payload: ProfileUpdate, user: dict = Depends(get_current_user), conn=Depends(get_db)):
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
-    await db.users.update_one({"id": user["id"]}, {"$set": update})
-    return await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    if update:
+        set_parts = [f"{k} = ${i + 1}" for i, k in enumerate(update)]
+        params = list(update.values()) + [user["id"]]
+        await conn.execute(
+            f"UPDATE users SET {', '.join(set_parts)} WHERE id = ${len(params)}",
+            *params,
+        )
+    row = await conn.fetchrow(
+        "SELECT id, name, email, avatar_url, created_at, deleted_at FROM users WHERE id = $1", user["id"]
+    )
+    return dict(row)
 
-
-# --------- Metadados ---------
 
 @router.get("/users/modules-catalog")
 async def modules_catalog():

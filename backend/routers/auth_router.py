@@ -41,17 +41,18 @@ def _set_cookies(response: Response, access: str, refresh: str | None = None) ->
         )
 
 
-async def _user_companies_payload(db, user_id: str) -> list[dict]:
-    memberships = await db.user_companies.find(
-        {"user_id": user_id, "is_active": True}, {"_id": 0}
-    ).to_list(100)
+async def _user_companies_payload(conn, user_id: str) -> list[dict]:
+    memberships = await conn.fetch(
+        "SELECT * FROM user_companies WHERE user_id = $1 AND is_active = TRUE", user_id
+    )
+    if not memberships:
+        return []
     company_ids = [m["company_id"] for m in memberships]
-    # Apenas empresas ativas e não deletadas são apresentadas/seleccionáveis
-    companies = await db.companies.find(
-        {"id": {"$in": company_ids}, "deleted_at": None, "is_active": True},
-        {"_id": 0},
-    ).to_list(100)
-    by_id = {c["id"]: c for c in companies}
+    companies = await conn.fetch(
+        "SELECT * FROM companies WHERE id = ANY($1) AND deleted_at IS NULL AND is_active = TRUE",
+        company_ids,
+    )
+    by_id = {c["id"]: dict(c) for c in companies}
     out = []
     for m in memberships:
         c = by_id.get(m["company_id"])
@@ -60,31 +61,33 @@ async def _user_companies_payload(db, user_id: str) -> list[dict]:
                 **c,
                 "is_franchisor": c.get("is_franchisor", False),
                 "role": m["role"],
-                "modules": m.get("modules", []),
+                "modules": m["modules"] or [],
             })
     return out
 
 
-async def _membership_modules(db, user_id: str, company_id: str) -> list[str]:
-    m = await db.user_companies.find_one(
-        {"user_id": user_id, "company_id": company_id, "is_active": True},
-        {"_id": 0, "modules": 1},
+async def _membership_modules(conn, user_id: str, company_id: str) -> list[str]:
+    row = await conn.fetchrow(
+        "SELECT modules FROM user_companies WHERE user_id = $1 AND company_id = $2 AND is_active = TRUE",
+        user_id, company_id,
     )
-    return (m or {}).get("modules") or []
+    if not row:
+        return []
+    return row["modules"] or []
 
 
 @router.post("/login")
-async def login(payload: LoginInput, response: Response, db=Depends(get_db)):
+async def login(payload: LoginInput, response: Response, conn=Depends(get_db)):
     email = payload.email.lower().strip()
-    user = await db.users.find_one({"email": email})
-    if not user or not verify_password(payload.password, user["password_hash"]):
+    user_row = await conn.fetchrow("SELECT * FROM users WHERE email = $1", email)
+    if not user_row or not verify_password(payload.password, user_row["password_hash"]):
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
 
-    companies = await _user_companies_payload(db, user["id"])
+    user = dict(user_row)
+    companies = await _user_companies_payload(conn, user["id"])
     if not companies:
         raise HTTPException(status_code=403, detail="Usuário sem empresa ativa")
 
-    # Prefer franqueadora (enterprise plan) for MASTER, else first MASTER membership, else first
     default_company = (
         next((c for c in companies if c["role"] == "MASTER" and c.get("plan") == "enterprise"), None)
         or next((c for c in companies if c["role"] == "MASTER"), None)
@@ -95,7 +98,6 @@ async def login(payload: LoginInput, response: Response, db=Depends(get_db)):
     _set_cookies(response, access, refresh)
 
     user.pop("password_hash", None)
-    user.pop("_id", None)
     return {
         "access_token": access,
         "refresh_token": refresh,
@@ -107,7 +109,7 @@ async def login(payload: LoginInput, response: Response, db=Depends(get_db)):
 
 
 @router.post("/refresh")
-async def refresh(request: Request, response: Response, db=Depends(get_db)):
+async def refresh(request: Request, response: Response, conn=Depends(get_db)):
     token = request.cookies.get("refresh_token")
     if not token:
         raise HTTPException(status_code=401, detail="Refresh token ausente")
@@ -118,11 +120,14 @@ async def refresh(request: Request, response: Response, db=Depends(get_db)):
     except Exception:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
-    if not user:
+    row = await conn.fetchrow(
+        "SELECT id, name, email, avatar_url, created_at FROM users WHERE id = $1", payload["sub"]
+    )
+    if not row:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
 
-    companies = await _user_companies_payload(db, user["id"])
+    user = dict(row)
+    companies = await _user_companies_payload(conn, user["id"])
     default_company = (
         next((c for c in companies if c["role"] == "MASTER" and c.get("plan") == "enterprise"), None)
         or next((c for c in companies if c["role"] == "MASTER"), None)
@@ -145,21 +150,23 @@ async def logout(response: Response):
 @router.post("/switch-company")
 async def switch_company(
     payload: SwitchCompanyInput, response: Response,
-    user: dict = Depends(get_current_user), db=Depends(get_db),
+    user: dict = Depends(get_current_user), conn=Depends(get_db),
 ):
-    membership = await db.user_companies.find_one(
-        {"user_id": user["id"], "company_id": payload.company_id, "is_active": True},
-        {"_id": 0},
+    membership_row = await conn.fetchrow(
+        "SELECT * FROM user_companies WHERE user_id = $1 AND company_id = $2 AND is_active = TRUE",
+        user["id"], payload.company_id,
     )
-    if not membership:
+    if not membership_row:
         raise HTTPException(status_code=403, detail="Empresa não autorizada")
-    company = await db.companies.find_one(
-        {"id": payload.company_id, "deleted_at": None}, {"_id": 0}
+    company_row = await conn.fetchrow(
+        "SELECT * FROM companies WHERE id = $1 AND deleted_at IS NULL", payload.company_id
     )
-    if not company:
+    if not company_row:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
-    if company.get("is_active") is False:
+    if not company_row["is_active"]:
         raise HTTPException(status_code=403, detail="Empresa inativa")
+
+    membership = dict(membership_row)
     access = create_access_token(user["id"], user["email"], payload.company_id, membership["role"])
     _set_cookies(response, access)
     return {
@@ -167,15 +174,15 @@ async def switch_company(
         "active_company_id": payload.company_id,
         "active_role": membership["role"],
         "active_modules": membership.get("modules") or [],
-        "company": company,
+        "company": dict(company_row),
     }
 
 
 @router.get("/me")
-async def me(user: dict = Depends(get_current_user), db=Depends(get_db)):
-    companies = await _user_companies_payload(db, user["id"])
+async def me(user: dict = Depends(get_current_user), conn=Depends(get_db)):
+    companies = await _user_companies_payload(conn, user["id"])
     active_company_id = user.get("_jwt_company_id")
-    active_modules = await _membership_modules(db, user["id"], active_company_id) if active_company_id else []
+    active_modules = await _membership_modules(conn, user["id"], active_company_id) if active_company_id else []
     return {
         "user": {k: v for k, v in user.items() if not k.startswith("_jwt")},
         "companies": companies,
@@ -186,46 +193,50 @@ async def me(user: dict = Depends(get_current_user), db=Depends(get_db)):
 
 
 @router.post("/forgot-password", status_code=204)
-async def forgot_password(payload: ForgotPasswordInput, db=Depends(get_db)):
-    user = await db.users.find_one({"email": payload.email.lower().strip()})
-    if user:
+async def forgot_password(payload: ForgotPasswordInput, conn=Depends(get_db)):
+    user_row = await conn.fetchrow(
+        "SELECT id FROM users WHERE email = $1", payload.email.lower().strip()
+    )
+    if user_row:
         token = secrets.token_urlsafe(32)
-        await db.password_reset_tokens.insert_one({
-            "id": str(uuid.uuid4()),
-            "token": token,
-            "user_id": user["id"],
-            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-            "used": False,
-        })
+        expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        await conn.execute(
+            "INSERT INTO password_reset_tokens (id, token, user_id, expires_at, used) VALUES ($1, $2, $3, $4, $5)",
+            str(uuid.uuid4()), token, user_row["id"], expires, False,
+        )
         print(f"[RESET LINK] /reset-password?token={token}")
     return Response(status_code=204)
 
 
 @router.post("/reset-password", status_code=204)
-async def reset_password(payload: ResetPasswordInput, db=Depends(get_db)):
-    record = await db.password_reset_tokens.find_one({"token": payload.token, "used": False})
+async def reset_password(payload: ResetPasswordInput, conn=Depends(get_db)):
+    record = await conn.fetchrow(
+        "SELECT * FROM password_reset_tokens WHERE token = $1 AND used = FALSE", payload.token
+    )
     if not record:
         raise HTTPException(status_code=400, detail="Token inválido")
     if datetime.fromisoformat(record["expires_at"]) < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Token expirado")
-    await db.users.update_one(
-        {"id": record["user_id"]},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
+    await conn.execute(
+        "UPDATE users SET password_hash = $1 WHERE id = $2",
+        hash_password(payload.new_password), record["user_id"],
     )
-    await db.password_reset_tokens.update_one({"token": payload.token}, {"$set": {"used": True}})
+    await conn.execute(
+        "UPDATE password_reset_tokens SET used = TRUE WHERE token = $1", payload.token
+    )
     return Response(status_code=204)
 
 
 @router.put("/password", status_code=204)
 async def change_password(
     payload: PasswordChangeInput,
-    user: dict = Depends(get_current_user), db=Depends(get_db),
+    user: dict = Depends(get_current_user), conn=Depends(get_db),
 ):
-    full = await db.users.find_one({"id": user["id"]})
+    full = await conn.fetchrow("SELECT password_hash FROM users WHERE id = $1", user["id"])
     if not full or not verify_password(payload.current_password, full["password_hash"]):
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {"password_hash": hash_password(payload.new_password)}},
+    await conn.execute(
+        "UPDATE users SET password_hash = $1 WHERE id = $2",
+        hash_password(payload.new_password), user["id"],
     )
     return Response(status_code=204)
