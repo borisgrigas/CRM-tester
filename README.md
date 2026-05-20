@@ -1,233 +1,261 @@
-# CRM SaaS Multi-Tenant (Franquia) — MVP
+# CRM SaaS Multi-Tenant (Franquia)
 
-CRM SaaS no modelo franqueadora/franqueados, inspirado no RD Station + HubSpot.
-Uma franqueadora (tenant master) gerencia múltiplas unidades (sub-tenants).
-Cada unidade opera de forma isolada, mas a franqueadora tem visibilidade consolidada.
+CRM no modelo franqueadora/franqueados, inspirado no RD Station e HubSpot.  
+Uma franqueadora (tenant master) gerencia múltiplas unidades (sub-tenants).  
+Cada unidade opera de forma isolada; a franqueadora tem visibilidade consolidada de todas.
 
 ---
 
 ## Stack
 
-- **Backend:** FastAPI (Python 3.11) + Motor (MongoDB async) + PyJWT + bcrypt
-- **Frontend:** React 19 (CRA) + React Router 7 + Zustand + React Query v5 + shadcn/ui + @dnd-kit + Recharts + @phosphor-icons/react
-- **Multi-tenant:** campo `company_id` em todos os documentos + dependency `get_current_company` injetada via JWT
-- **Auth:** JWT access (15min) + refresh (7d) em **cookies httpOnly**, com switch-company
-- **Roles:** MASTER, ADMIN, COMMERCIAL, ANALYST
+| Camada | Tecnologia |
+|---|---|
+| **Backend** | FastAPI (Python 3.11) + asyncpg (PostgreSQL async) + PyJWT + bcrypt |
+| **Banco de dados** | PostgreSQL 16 |
+| **Frontend** | React 19 + React Router 7 + Zustand + React Query v5 |
+| **UI** | shadcn/ui + @dnd-kit (Kanban) + Recharts + @phosphor-icons/react |
+| **Auth** | JWT access (15 min) + refresh (7 d) em cookies httpOnly, com switch-company |
+| **Multi-tenant** | campo `company_id` em todas as tabelas + dependência `get_current_company` injetada via JWT |
+| **Roles** | MASTER · ADMIN · COMMERCIAL · ANALYST |
+| **Containers** | Docker Compose (postgres + backend + frontend) |
 
 ---
 
 ## Pré-requisitos
 
-- Python 3.11+
-- Node.js 18+
-- Yarn 1.22+ (`npm install -g yarn`)
-- MongoDB 7+ rodando localmente em `mongodb://localhost:27017` (ou ajuste `MONGO_URL`)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado e em execução
+
+Não é necessário Python, Node ou PostgreSQL instalados localmente.
 
 ---
 
-## Como rodar localmente
-
-### Opção A — Script único
-
-```bash
-chmod +x build.sh
-./build.sh
-```
-
-Depois:
-
-```bash
-# Terminal 1
-cd backend && uvicorn server:app --host 0.0.0.0 --port 8001 --reload
-
-# Terminal 2
-cd frontend && yarn start
-```
-
-A app abre em **http://localhost:3000**.
-
-### Opção B — Docker Compose
+## Subir o sistema
 
 ```bash
 docker-compose up --build
 ```
 
-Sobe MongoDB + backend + frontend juntos.
-
-### Opção C — Manual
+Na primeira execução o build leva alguns minutos (download de imagens e dependências).  
+Nas execuções seguintes é quase instantâneo:
 
 ```bash
-# 1. .env
-cp .env.example backend/.env
-# edite backend/.env conforme necessário
-echo "REACT_APP_BACKEND_URL=http://localhost:8001" > frontend/.env
-echo "WDS_SOCKET_PORT=0" >> frontend/.env
+docker-compose up
+```
 
-# 2. Backend
-cd backend
-pip install -r requirements.txt
-python seed.py        # popula dados demo
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+O seed popula automaticamente o banco com dados de demonstração na inicialização.
 
-# 3. Frontend
-cd ../frontend
-yarn install
-yarn start
+| Serviço | URL |
+|---|---|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:8001/api |
+| PostgreSQL | localhost:5432 |
+
+Para parar:
+
+```bash
+docker-compose down
+```
+
+Para resetar o banco (apaga os volumes):
+
+```bash
+docker-compose down -v
 ```
 
 ---
 
-## Credenciais de demonstração (criadas pelo seed)
+## Variáveis de ambiente
 
-| Papel       | Email                                | Senha       | Empresa             |
-|-------------|---------------------------------------|-------------|---------------------|
-| MASTER      | `master@franqueadora.com`             | `master123` | Franqueadora ACME   |
-| ADMIN       | `admin@unidade-sao-paulo.com`         | `senha123`  | Unidade São Paulo   |
-| COMMERCIAL  | `vendas@unidade-sao-paulo.com`        | `senha123`  | Unidade São Paulo   |
-| COMMERCIAL  | `vendas2@unidade-sao-paulo.com`       | `senha123`  | Unidade São Paulo   |
-| ANALYST     | `analista@unidade-sao-paulo.com`      | `senha123`  | Unidade São Paulo   |
+As variáveis abaixo podem ser sobrescritas em um arquivo `.env` na raiz do projeto:
 
-> O mesmo padrão se aplica a `unidade-rio-de-janeiro` e `unidade-belo-horizonte`.
-> O usuário **MASTER** tem acesso (role MASTER) a todas as 4 empresas.
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `JWT_SECRET` | `change-me-in-production-64-chars` | Chave de assinatura JWT |
+| `ADMIN_EMAIL` | `master@franqueadora.com` | E-mail do usuário master gerado pelo seed |
+| `ADMIN_PASSWORD` | `master123` | Senha do usuário master |
+| `DATABASE_URL` | `postgresql://crm_user:crm_pass@postgres:5432/crm_saas` | Conexão PostgreSQL |
+| `CORS_ORIGINS` | `http://localhost:3000` | Origens permitidas pelo CORS |
 
 ---
 
-## Dados de demonstração populados
+## Credenciais de demonstração
+
+| Papel | E-mail | Senha | Empresa |
+|---|---|---|---|
+| MASTER | `master@franqueadora.com` | `master123` | Franqueadora ACME (acesso a todas) |
+| ADMIN | `admin@unidade-sao-paulo.com` | `senha123` | Unidade São Paulo |
+| COMMERCIAL | `vendas@unidade-sao-paulo.com` | `senha123` | Unidade São Paulo |
+| COMMERCIAL | `vendas2@unidade-sao-paulo.com` | `senha123` | Unidade São Paulo |
+| ANALYST | `analista@unidade-sao-paulo.com` | `senha123` | Unidade São Paulo |
+
+> O mesmo padrão de e-mail se aplica a `unidade-rio-de-janeiro` e `unidade-belo-horizonte`.
+
+---
+
+## Dados populados pelo seed
 
 - 1 Franqueadora ACME (plan: enterprise) + 3 Unidades (SP, RJ, BH)
-- 1 usuário MASTER + 4 usuários por unidade (1 ADMIN + 2 COMMERCIAL + 1 ANALYST)
-- 51 contatos (leads + clientes) distribuídos
-- 21 deals em estágios variados
-- 1 pipeline padrão por empresa com 6 estágios (Novo Lead → Fechado Perdido)
-- Tarefas e notificações de exemplo
+- 1 usuário MASTER com acesso a todas as 4 empresas
+- 4 usuários por unidade: 1 ADMIN + 2 COMMERCIAL + 1 ANALYST
+- 17 contatos (leads + clientes) por unidade = 51 no total
+- 7 deals por unidade em estágios variados = 21 no total
+- 1 pipeline padrão por empresa com 6 estágios:
+  `Novo Lead → Contato Feito → Proposta Enviada → Negociação → Fechado Ganho → Fechado Perdido`
+- Tarefas e notificações de exemplo por unidade
 
 ---
 
-## Matriz de Permissões
+## Rotas da API
 
-| Recurso                    | MASTER | ADMIN  | COMMERCIAL | ANALYST |
-|----------------------------|--------|--------|------------|---------|
-| Ver todas as empresas      | ✓      | ✗      | ✗          | ✗       |
-| Criar/Editar empresa       | ✓      | ✗      | ✗          | ✗       |
-| Convidar usuário           | ✓      | ✓ ¹   | ✗          | ✗       |
-| Alterar role               | ✓      | ✓ ¹   | ✗          | ✗       |
-| Ativar/Inativar usuário    | ✓      | ✓ ¹   | ✗          | ✗       |
-| Gerenciar pipelines        | ✓      | ✓      | ✗          | ✗       |
-| Criar/editar contatos      | ✓      | ✓      | ✓          | ✗       |
-| Mover deals (kanban)       | ✓      | ✓      | ✓          | ✗       |
-| Ver todos os deals         | ✓      | ✓      | apenas seus| ✓       |
-| Ver dashboards             | ✓      | ✓      | ✓          | ✓       |
-
-¹ ADMIN não pode atuar sobre outro ADMIN ou MASTER.
-
-### Regras de negócio adicionais
-
-- ❌ **Slug imutável** após criação da empresa.
-- ❌ **Não é possível inativar o último ADMIN** ativo de uma empresa.
-- ❌ **Empresa inativa** rejeita o JWT de qualquer usuário daquela empresa (`get_current_company` valida `is_active` e `deleted_at`).
-- ❌ **Soft delete** em empresas (campo `deleted_at`); usuários removidos da empresa têm o registro de membership deletado, mas o documento `users` permanece.
-
----
-
-## Rotas da API (todas com prefixo `/api`)
+Todas as rotas exigem `Authorization: Bearer <token>` e `X-Company-ID: <uuid>`, exceto as de auth.
 
 ### Auth
+
 ```
-POST   /api/auth/login              { email, password } → cookies + user + companies
-POST   /api/auth/refresh            (cookie) → novo access_token
+POST   /api/auth/login              { email, password } → access_token + refresh_token + user + companies
+POST   /api/auth/refresh            (cookie refresh_token) → novo access_token
 POST   /api/auth/logout             204
-POST   /api/auth/switch-company     { company_id } → reemite token
+POST   /api/auth/switch-company     { company_id } → reemite token para outra empresa
 GET    /api/auth/me                 → user + companies + active_company_id + active_role
-POST   /api/auth/forgot-password    { email } → 204
+POST   /api/auth/forgot-password    { email } → 204 (sempre, mesmo e-mail inexistente)
 POST   /api/auth/reset-password     { token, new_password } → 204
 PUT    /api/auth/password           { current_password, new_password } → 204
 ```
 
 ### Contatos
+
 ```
 GET    /api/contacts                ?page&limit&search&type&assigned_to&tag&origin&score_min&score_max&sort
-POST   /api/contacts                cria contato
-GET    /api/contacts/:id            detalhe + activities + deals
-PUT    /api/contacts/:id            atualiza
-DELETE /api/contacts/:id            soft delete (apenas ADMIN/MASTER)
-POST   /api/contacts/:id/convert    lead → cliente
-POST   /api/contacts/:id/tags       { tags: [] }
-DELETE /api/contacts/:id/tags       { tags: [] }
-GET    /api/contacts/:id/activities timeline
-POST   /api/contacts/:id/activities registra atividade (incrementa score)
+POST   /api/contacts                cria contato (lead ou cliente)
+GET    /api/contacts/:id            detalhe
+PUT    /api/contacts/:id            atualiza campos
+DELETE /api/contacts/:id            soft delete (ADMIN/MASTER)
+POST   /api/contacts/:id/convert    converte lead → cliente
+POST   /api/contacts/:id/tags       { tags: ["VIP"] } — adiciona tags
+DELETE /api/contacts/:id/tags       { tags: ["VIP"] } — remove tags
+GET    /api/contacts/:id/activities timeline de atividades
+POST   /api/contacts/:id/activities registra atividade (incrementa score automaticamente)
 ```
 
-### Pipelines & Stages
+Score automático por tipo de atividade: `call +8 · meeting +6 · email +5 · whatsapp +4 · task +2 · note +1`
+
+### Pipelines & Estágios
+
 ```
-GET    /api/pipelines               lista pipelines + stages aninhados
+GET    /api/pipelines               lista pipelines com estágios aninhados
 POST   /api/pipelines               cria pipeline
-PUT    /api/pipelines/:id           atualiza
+PUT    /api/pipelines/:id           atualiza nome/config
 DELETE /api/pipelines/:id           soft delete
 POST   /api/pipelines/:id/stages    cria estágio
 PUT    /api/pipelines/:id/stages    reordena: [{ id, position }]
-PUT    /api/pipelines/:id/stages/:stageId   atualiza
-DELETE /api/pipelines/:id/stages/:stageId   soft delete
+PUT    /api/pipelines/:id/stages/:stageId   atualiza estágio
+DELETE /api/pipelines/:id/stages/:stageId   soft delete do estágio
 ```
 
 ### Deals
+
 ```
 GET    /api/deals                   ?pipeline_id&stage_id&assigned_to&value_min&value_max&search
-POST   /api/deals                   cria
-GET    /api/deals/:id               detalhe + contato
-PUT    /api/deals/:id               atualiza
+POST   /api/deals                   cria deal
+GET    /api/deals/:id               detalhe + contato vinculado
+PUT    /api/deals/:id               atualiza campos
 DELETE /api/deals/:id               soft delete
-PATCH  /api/deals/:id/stage         { stage_id, pipeline_id? } — drag-and-drop
-POST   /api/deals/:id/won           marca ganho + converte contato
-POST   /api/deals/:id/lost          { reason }
+PATCH  /api/deals/:id/stage         { stage_id } — drag-and-drop no Kanban
+POST   /api/deals/:id/won           marca como ganho + converte contato para cliente
+POST   /api/deals/:id/lost          { reason } — marca como perdido
 ```
 
 ### Analytics
+
 ```
-GET    /api/analytics/overview      ?from&to&pipeline_id → 5 KPIs
-GET    /api/analytics/funnel        ?pipeline_id → stages com count + value
-GET    /api/analytics/revenue       ?months=6 → ganho vs previsto por mês
-GET    /api/analytics/leaderboard   top vendedores
-GET    /api/analytics/activities    volume por tipo
-GET    /api/analytics/lead-sources  distribuição por origem
+GET    /api/analytics/overview      ?from&to&pipeline_id → KPIs: leads, clientes, deals, conversão, valor
+GET    /api/analytics/funnel        ?pipeline_id → contagem e valor por estágio
+GET    /api/analytics/revenue       ?months=6 → receita ganha vs. prevista por mês
+GET    /api/analytics/leaderboard   top vendedores por valor ganho
+GET    /api/analytics/activities    volume de atividades por tipo
+GET    /api/analytics/lead-sources  distribuição de leads por origem
 ```
 
-### Companies (apenas MASTER, exceto onde indicado)
+### Empresas (MASTER)
+
 ```
-GET    /api/companies                     lista todas
-POST   /api/companies                     cria nova empresa (slug único)
-GET    /api/companies/consolidated        métricas agregadas de todas
-GET    /api/companies/:id                 detalhe
-PUT    /api/companies/:id                 atualiza (slug imutável)
-PATCH  /api/companies/:id/activate        ativa empresa
-PATCH  /api/companies/:id/deactivate      inativa (bloqueia login dos membros)
-DELETE /api/companies/:id                 soft delete
-GET    /api/companies/:id/users           usuários da empresa
+GET    /api/companies               lista todas as empresas
+POST   /api/companies               cria empresa (slug único e imutável)
+GET    /api/companies/consolidated  métricas agregadas de todas as unidades
+GET    /api/companies/:id           detalhe
+PUT    /api/companies/:id           atualiza (slug não pode ser alterado)
+PATCH  /api/companies/:id/activate  ativa empresa
+PATCH  /api/companies/:id/deactivate inativa empresa (bloqueia login dos membros)
+DELETE /api/companies/:id           soft delete
+GET    /api/companies/:id/users     membros da empresa
 ```
 
-### Users (ADMIN/MASTER)
+### Usuários (ADMIN/MASTER)
+
 ```
-GET    /api/users                         lista membros da empresa ativa
-POST   /api/users/invite                  convida { name, email, role, password }
-PUT    /api/users/:id/role                { role } — ADMIN não pode promover ADMIN/MASTER
-PATCH  /api/users/:id/activate            ativa membro na empresa
-PATCH  /api/users/:id/deactivate          inativa (não pode ser o último ADMIN)
-DELETE /api/users/:id                     remove da empresa (mantém users doc)
-GET    /api/profile                       perfil próprio
-PUT    /api/profile                       atualiza nome/avatar
+GET    /api/users                   lista membros da empresa ativa
+POST   /api/users/invite            convida: { name, email, role, password }
+PUT    /api/users/:id/role          { role } — ADMIN não pode alterar outro ADMIN/MASTER
+PATCH  /api/users/:id/activate      ativa membro na empresa
+PATCH  /api/users/:id/deactivate    inativa (protegido: não pode ser o último ADMIN)
+DELETE /api/users/:id               remove da empresa (registro de usuário é preservado)
+GET    /api/profile                 perfil do usuário autenticado
+PUT    /api/profile                 atualiza nome e avatar
 ```
 
 ### Tarefas e Notificações
-```
-GET    /api/tasks                         ?status&priority&assigned_to
-POST   /api/tasks                         cria
-PUT    /api/tasks/:id                     atualiza
-PATCH  /api/tasks/:id/complete            conclui
-DELETE /api/tasks/:id                     remove
 
-GET    /api/notifications                 lista (não lidas primeiro) + unread count
-PATCH  /api/notifications/read-all        marca todas como lidas
-PATCH  /api/notifications/:id/read        marca uma
 ```
+GET    /api/tasks                   ?status&priority&assigned_to
+POST   /api/tasks                   cria tarefa
+PUT    /api/tasks/:id               atualiza
+PATCH  /api/tasks/:id/complete      marca como concluída
+DELETE /api/tasks/:id               remove (hard delete)
+
+GET    /api/notifications           lista (não lidas primeiro) + unread count
+PATCH  /api/notifications/read-all  marca todas como lidas
+PATCH  /api/notifications/:id/read  marca uma como lida
+```
+
+---
+
+## Matriz de permissões
+
+| Recurso | MASTER | ADMIN | COMMERCIAL | ANALYST |
+|---|:---:|:---:|:---:|:---:|
+| Ver/criar/editar empresas | ✓ | ✗ | ✗ | ✗ |
+| Ativar/inativar empresa | ✓ | ✗ | ✗ | ✗ |
+| Convidar usuários | ✓ | ✓ ¹ | ✗ | ✗ |
+| Alterar role / ativar / inativar usuário | ✓ | ✓ ¹ | ✗ | ✗ |
+| Gerenciar pipelines e estágios | ✓ | ✓ | ✗ | ✗ |
+| Criar e editar contatos | ✓ | ✓ | ✓ | ✗ |
+| Deletar contatos | ✓ | ✓ | ✗ | ✗ |
+| Criar e mover deals (Kanban) | ✓ | ✓ | ✓ | ✗ |
+| Ver deals de outros vendedores | ✓ | ✓ | ✗ | ✓ |
+| Ver dashboards e analytics | ✓ | ✓ | ✓ | ✓ |
+
+¹ ADMIN não pode atuar sobre outro ADMIN ou sobre um MASTER.
+
+### Regras de negócio
+
+- **Slug imutável** — não pode ser alterado após a criação da empresa.
+- **Último ADMIN protegido** — não é possível inativar ou remover o único ADMIN ativo de uma empresa.
+- **Empresa inativa bloqueia login** — `get_current_company` valida `is_active` e `deleted_at` a cada requisição.
+- **Soft delete** — empresas e contatos usam `deleted_at`; o registro de membership é deletado mas o `users` é preservado.
+- **Isolamento multi-tenant** — todas as queries filtram por `company_id`; um tenant jamais vê dados de outro.
+
+---
+
+## Testes
+
+Os testes são de integração HTTP — sobem um banco PostgreSQL real e disparam requisições contra o servidor.
+
+```bash
+# Rodar dentro do container (banco já disponível)
+docker exec crm_backend python -m pytest tests/ -v
+```
+
+44 testes cobrindo: autenticação, refresh, switch-company, isolamento multi-tenant, CRUD completo de contatos/deals/pipelines, analytics, RBAC, gestão de empresas e usuários.
 
 ---
 
@@ -236,14 +264,14 @@ PATCH  /api/notifications/:id/read        marca uma
 ```
 crm-saas/
 ├── backend/
-│   ├── server.py                FastAPI app + lifespan (índices)
+│   ├── server.py                FastAPI app + lifespan (init/close pool PostgreSQL)
 │   ├── auth_utils.py            bcrypt + PyJWT (HS256)
-│   ├── deps.py                  get_current_user, get_current_company, require_roles
-│   ├── db.py                    Motor client compartilhado
+│   ├── deps.py                  get_current_user · get_current_company · require_roles
+│   ├── db.py                    pool asyncpg + CREATE TABLE (11 tabelas) + codec JSONB
 │   ├── models.py                Pydantic DTOs
-│   ├── seed.py                  dados de demonstração
+│   ├── seed.py                  dados de demonstração (truncate + inserts SQL)
 │   ├── requirements.txt
-│   ├── .env                     (criado pelo build.sh)
+│   ├── Dockerfile
 │   ├── routers/
 │   │   ├── auth_router.py
 │   │   ├── contacts_router.py
@@ -254,71 +282,55 @@ crm-saas/
 │   │   ├── users_router.py
 │   │   ├── tasks_router.py
 │   │   └── notifications_router.py
-│   └── tests/                   24 testes pytest (auth, multi-tenant, CRUD, RBAC)
+│   └── tests/
+│       ├── conftest.py          fixtures: pool, tokens, company/user helpers
+│       ├── backend_test.py      auth, contatos, deals, pipelines, analytics (integração)
+│       └── test_admin_features.py  RBAC, empresas, usuários, regras de negócio
 ├── frontend/
 │   ├── src/
 │   │   ├── App.js               rotas + ProtectedRoute + Layout
-│   │   ├── lib/api.js           axios + auto-refresh 401
+│   │   ├── lib/api.js           axios + interceptor de auto-refresh 401
 │   │   ├── stores/authStore.js  Zustand: user, companies, switchCompany
 │   │   ├── components/
 │   │   │   ├── Sidebar.jsx
 │   │   │   ├── Header.jsx
 │   │   │   ├── CompanySwitcher.jsx
-│   │   │   ├── Layout.jsx
-│   │   │   ├── ProtectedRoute.jsx
 │   │   │   └── ui/              shadcn/ui
 │   │   └── pages/
 │   │       ├── Login.jsx
-│   │       ├── Dashboard.jsx    KPIs + gráficos
-│   │       ├── Contacts.jsx
-│   │       ├── ContactDetail.jsx
-│   │       ├── Pipeline.jsx     Kanban @dnd-kit
+│   │       ├── Dashboard.jsx        KPIs + gráficos Recharts
+│   │       ├── Contacts.jsx         listagem com filtros
+│   │       ├── ContactDetail.jsx    timeline de atividades + deals vinculados
+│   │       ├── Pipeline.jsx         Kanban drag-and-drop (@dnd-kit)
 │   │       ├── Tasks.jsx
-│   │       ├── Analytics.jsx
+│   │       ├── Analytics.jsx        funil, receita, leaderboard, origens
 │   │       ├── Settings.jsx
-│   │       ├── AdminUsers.jsx       gestão de usuários (ADMIN+MASTER)
+│   │       ├── AdminUsers.jsx       gestão de usuários (ADMIN + MASTER)
 │   │       └── AdminCompanies.jsx   gestão de empresas (MASTER)
+│   ├── Dockerfile
 │   └── package.json
 ├── docker-compose.yml
-├── .env.example
-├── build.sh
 └── README.md
 ```
 
 ---
 
-## Testes
+## Roadmap (fora do MVP)
 
-### Backend
-
-```bash
-cd backend
-python -m pytest tests/ -v
-```
-
-24 testes cobrindo: auth, switch-company, isolamento multi-tenant, CRUD de contatos/deals/pipelines, analytics, RBAC, gestão de empresas e usuários.
-
-### Frontend
-
-Testes de frontend ainda não estão configurados. Execute `yarn start` e valide manualmente o fluxo: login → dashboard → contatos → kanban → admin.
-
----
-
-## O que está fora do MVP (Fase 2)
-
-- Workflow Builder (canvas) + Engine de automações (Celery + Redis)
-- WebSockets nativos (notificações em tempo real)
+- Workflow Builder (canvas de automações) + Engine assíncrona (Celery + Redis)
+- WebSockets para notificações em tempo real
 - Importação/Exportação CSV de contatos
-- Webhooks de saída (deal.won, contact.created…) com retry
+- Webhooks de saída (`deal.won`, `contact.created`) com retry
 - Lead scoring assíncrono em fila
-- Produtos + custom_fields configuráveis
-- Gamificação (badges, ranking mensal)
-- Integrações WhatsApp (Evolution/Z-API), Email (Resend/SendGrid)
-- Power BI / API key endpoints
+- Campos customizáveis por empresa (custom_fields configuráveis via UI)
+- Gamificação: badges e ranking mensal por vendedor
+- Integração WhatsApp (Evolution API / Z-API)
+- Integração de e-mail transacional (Resend / SendGrid)
+- Endpoints de API key para integrações externas / Power BI
 - UI de audit logs
 
 ---
 
 ## Licença
 
-Privado — uso interno da franqueadora.
+Privado — uso interno.
