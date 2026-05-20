@@ -300,7 +300,7 @@ python -m pytest tests/ -v
 
 ### Frontend
 
-Smoke tests rodam via Playwright no Chromium (login → dashboard → contatos → kanban → admin).
+Testes de frontend ainda não estão configurados. Execute `yarn start` e valide manualmente o fluxo: login → dashboard → contatos → kanban → admin.
 
 ---
 

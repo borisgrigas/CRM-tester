@@ -41,12 +41,12 @@ async def list_deals(
     f = {"company_id": membership["company_id"], "deleted_at": None}
     if membership["role"] == "COMMERCIAL":
         f["assigned_to"] = membership["user_id"]
+    elif assigned_to:
+        f["assigned_to"] = assigned_to
     if pipeline_id:
         f["pipeline_id"] = pipeline_id
     if stage_id:
         f["stage_id"] = stage_id
-    if assigned_to:
-        f["assigned_to"] = assigned_to
     if value_min is not None or value_max is not None:
         rng = {}
         if value_min is not None:
@@ -148,7 +148,7 @@ async def move_stage(deal_id: str, payload: StageMoveInput, membership: dict = D
 @router.post("/{deal_id}/won")
 async def mark_won(deal_id: str, membership: dict = Depends(get_current_company), db=Depends(get_db)):
     if membership["role"] == "ANALYST":
-        raise HTTPException(status_code=403, detail="ANALYST")
+        raise HTTPException(status_code=403, detail="ANALYST não pode marcar deal como ganho")
     now = _now_iso()
     await db.deals.update_one(
         {"id": deal_id, "company_id": membership["company_id"]},
@@ -166,7 +166,7 @@ async def mark_won(deal_id: str, membership: dict = Depends(get_current_company)
 @router.post("/{deal_id}/lost")
 async def mark_lost(deal_id: str, payload: LostInput, membership: dict = Depends(get_current_company), db=Depends(get_db)):
     if membership["role"] == "ANALYST":
-        raise HTTPException(status_code=403, detail="ANALYST")
+        raise HTTPException(status_code=403, detail="ANALYST não pode marcar deal como perdido")
     now = _now_iso()
     await db.deals.update_one(
         {"id": deal_id, "company_id": membership["company_id"]},

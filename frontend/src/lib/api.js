@@ -18,8 +18,8 @@ api.interceptors.response.use(
       try {
         await axios.post(`${API}/auth/refresh`, {}, { withCredentials: true });
         return api(error.config);
-      } catch (refreshErr) {
-        console.error("Token refresh failed:", refreshErr?.message || refreshErr);
+      } catch {
+        // deixa o erro 401 propagar — authStore.refreshMe() trata setando user: null
       }
     }
     return Promise.reject(error);

@@ -39,10 +39,10 @@ async def list_contacts(
     f = _scope(membership)
     if membership["role"] == "COMMERCIAL":
         f["assigned_to"] = membership["user_id"]
+    elif assigned_to:
+        f["assigned_to"] = assigned_to
     if type:
         f["type"] = type
-    if assigned_to:
-        f["assigned_to"] = assigned_to
     if tag:
         f["tags"] = tag
     if origin:
@@ -190,7 +190,7 @@ async def add_activity(
         "type": payload.type,
         "description": payload.description,
         "metadata": payload.metadata,
-        "occurred_at": (payload.occurred_at or datetime.now(timezone.utc)).isoformat() if not isinstance(payload.occurred_at, str) else payload.occurred_at,
+        "occurred_at": (payload.occurred_at or datetime.now(timezone.utc)).isoformat(),
         "created_at": _now_iso(),
     }
     await db.contact_activities.insert_one(activity)

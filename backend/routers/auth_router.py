@@ -25,16 +25,19 @@ from models import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+_IS_PROD = os.environ.get("ENV", "development").lower() == "production"
+_SAMESITE = "none" if _IS_PROD else "lax"
+
 
 def _set_cookies(response: Response, access: str, refresh: str | None = None) -> None:
     response.set_cookie(
-        key="access_token", value=access, httponly=True, secure=False,
-        samesite="lax", max_age=60 * 15, path="/",
+        key="access_token", value=access, httponly=True, secure=_IS_PROD,
+        samesite=_SAMESITE, max_age=60 * 15, path="/",
     )
     if refresh:
         response.set_cookie(
-            key="refresh_token", value=refresh, httponly=True, secure=False,
-            samesite="lax", max_age=60 * 60 * 24 * 7, path="/",
+            key="refresh_token", value=refresh, httponly=True, secure=_IS_PROD,
+            samesite=_SAMESITE, max_age=60 * 60 * 24 * 7, path="/",
         )
 
 
