@@ -16,6 +16,7 @@ export const MODULES = [
   { id: "analytics",       label: "Analytics",        flag: null },
   { id: "map",             label: "Mapa",             flag: null },
   { id: "franchise",       label: "Franquias",        flag: "franchise" },
+  { id: "whatsapp",        label: "WhatsApp",          flag: "whatsapp"  },
   { id: "admin",           label: "Administração",    flag: null },
 ];
 

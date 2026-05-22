@@ -30,6 +30,15 @@ async def _ensure_master_anywhere(conn, user_id: str):
         raise HTTPException(status_code=403, detail="Apenas MASTER")
 
 
+async def _ensure_master_or_admin_anywhere(conn, user_id: str):
+    row = await conn.fetchrow(
+        "SELECT 1 FROM user_companies WHERE user_id = $1 AND role IN ('MASTER', 'ADMIN') AND is_active = TRUE",
+        user_id,
+    )
+    if not row:
+        raise HTTPException(status_code=403, detail="Apenas MASTER ou ADMIN")
+
+
 @router.get("")
 async def list_companies(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     await _ensure_master_anywhere(conn, user["id"])
@@ -83,7 +92,7 @@ async def create_company(
 
 @router.get("/consolidated")
 async def consolidated(user: dict = Depends(get_current_user), conn=Depends(get_db)):
-    await _ensure_master_anywhere(conn, user["id"])
+    await _ensure_master_or_admin_anywhere(conn, user["id"])
     rows = await conn.fetch("SELECT * FROM companies WHERE deleted_at IS NULL")
     out = []
     total_pipeline = 0.0

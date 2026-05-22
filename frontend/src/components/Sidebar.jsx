@@ -12,6 +12,8 @@ import {
   UserGear,
   ShieldCheck,
   MapTrifold,
+  TreeStructure,
+  WhatsappLogo,
 } from "@phosphor-icons/react";
 import { useAuthStore } from "../stores/authStore";
 import { visibleModules } from "../lib/moduleRegistry";
@@ -39,6 +41,8 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const visible = visibleModules(activeRole, flags, permissions);
   const canSeeAdmin = visible.some((m) => m.id === "admin");
+  const canSeeFranchise = visible.some((m) => m.id === "franchise");
+  const canSeeWhatsApp  = visible.some((m) => m.id === "whatsapp");
 
   const handleLogout = async () => {
     await logout();
@@ -73,6 +77,38 @@ export default function Sidebar() {
           Operação
         </p>
         <div className="space-y-1">
+          {canSeeFranchise && (
+            <NavLink
+              to="/franchise"
+              data-testid="nav-franchise"
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
+                  isActive
+                    ? "bg-zinc-900 text-white"
+                    : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                }`
+              }
+            >
+              <TreeStructure size={18} weight="duotone" />
+              Franquias
+            </NavLink>
+          )}
+          {canSeeWhatsApp && (
+            <NavLink
+              to="/whatsapp"
+              data-testid="nav-whatsapp"
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
+                  isActive
+                    ? "bg-zinc-900 text-white"
+                    : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                }`
+              }
+            >
+              <WhatsappLogo size={18} weight="duotone" />
+              WhatsApp
+            </NavLink>
+          )}
           {items.map(({ to, label, Icon, testid }) => (
             <NavLink
               key={to}

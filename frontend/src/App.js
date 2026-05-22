@@ -15,6 +15,8 @@ import AdminCompanies from "./pages/AdminCompanies";
 import AdminUsers from "./pages/AdminUsers";
 import AdminPanel from "./features/admin/AdminPanel";
 import MapPage from "./features/map/MapPage";
+import FranchisePage from "./features/franchise/FranchisePage";
+import WhatsAppPage from "./features/whatsapp/WhatsAppPage";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ModuleGuard from "./components/ModuleGuard";
@@ -117,6 +119,30 @@ export default function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Settings />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/whatsapp"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <ModuleGuard module="whatsapp" level="view">
+                      <WhatsAppPage />
+                    </ModuleGuard>
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/franchise"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <ModuleGuard module="franchise" level="view">
+                      <FranchisePage />
+                    </ModuleGuard>
                   </Layout>
                 </ProtectedRoute>
               }

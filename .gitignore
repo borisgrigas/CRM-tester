@@ -130,3 +130,7 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Exemplos de configuracao DEVEM ser commitados (sem segredos reais)
+!.env.example
+!.env.production.example
