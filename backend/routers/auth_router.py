@@ -13,6 +13,8 @@ from auth_utils import (
     hash_password,
     verify_password,
 )
+from core.feature_flags import get_company_flags
+from core.permissions import get_user_permissions
 from db import get_db
 from deps import get_current_user
 from models import (
@@ -97,6 +99,8 @@ async def login(payload: LoginInput, response: Response, conn=Depends(get_db)):
     refresh = create_refresh_token(user["id"])
     _set_cookies(response, access, refresh)
 
+    flags = await get_company_flags(conn, default_company["id"])
+    permissions = await get_user_permissions(conn, user["id"], default_company["id"])
     user.pop("password_hash", None)
     return {
         "access_token": access,
@@ -105,6 +109,8 @@ async def login(payload: LoginInput, response: Response, conn=Depends(get_db)):
         "companies": companies,
         "active_company_id": default_company["id"],
         "active_role": default_company["role"],
+        "flags": flags,
+        "permissions": permissions,
     }
 
 
@@ -169,12 +175,16 @@ async def switch_company(
     membership = dict(membership_row)
     access = create_access_token(user["id"], user["email"], payload.company_id, membership["role"])
     _set_cookies(response, access)
+    flags = await get_company_flags(conn, payload.company_id)
+    permissions = await get_user_permissions(conn, user["id"], payload.company_id)
     return {
         "access_token": access,
         "active_company_id": payload.company_id,
         "active_role": membership["role"],
         "active_modules": membership.get("modules") or [],
         "company": dict(company_row),
+        "flags": flags,
+        "permissions": permissions,
     }
 
 
@@ -183,12 +193,16 @@ async def me(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     companies = await _user_companies_payload(conn, user["id"])
     active_company_id = user.get("_jwt_company_id")
     active_modules = await _membership_modules(conn, user["id"], active_company_id) if active_company_id else []
+    flags = await get_company_flags(conn, active_company_id) if active_company_id else {}
+    permissions = await get_user_permissions(conn, user["id"], active_company_id) if active_company_id else []
     return {
         "user": {k: v for k, v in user.items() if not k.startswith("_jwt")},
         "companies": companies,
         "active_company_id": active_company_id,
         "active_role": user.get("_jwt_role"),
         "active_modules": active_modules,
+        "flags": flags,
+        "permissions": permissions,
     }
 
 

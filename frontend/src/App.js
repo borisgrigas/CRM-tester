@@ -13,8 +13,11 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import AdminCompanies from "./pages/AdminCompanies";
 import AdminUsers from "./pages/AdminUsers";
+import AdminPanel from "./features/admin/AdminPanel";
+import MapPage from "./features/map/MapPage";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ModuleGuard from "./components/ModuleGuard";
 import { useAuthStore } from "./stores/authStore";
 
 const queryClient = new QueryClient({
@@ -114,6 +117,30 @@ export default function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Settings />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/map"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <ModuleGuard module="map">
+                      <MapPage />
+                    </ModuleGuard>
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <ModuleGuard module="admin" level="manage">
+                      <AdminPanel />
+                    </ModuleGuard>
                   </Layout>
                 </ProtectedRoute>
               }

@@ -10,13 +10,16 @@ load_dotenv()
 from fastapi import APIRouter, FastAPI  # noqa: E402
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
-from db import close_pool, init_pool  # noqa: E402
+from db import apply_schema_extra, close_pool, init_pool  # noqa: E402
+from integrations import webhook_router, whatsapp_router  # noqa: E402
 from routers import (  # noqa: E402
+    admin_router,
     analytics_router,
     auth_router,
     companies_router,
     contacts_router,
     deals_router,
+    map_router,
     notifications_router,
     pipelines_router,
     tasks_router,
@@ -27,6 +30,7 @@ from routers import (  # noqa: E402
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_pool()
+    await apply_schema_extra()
     yield
     await close_pool()
 
@@ -43,6 +47,10 @@ api_router.include_router(companies_router.router)
 api_router.include_router(users_router.router)
 api_router.include_router(tasks_router.router)
 api_router.include_router(notifications_router.router)
+api_router.include_router(map_router.router)
+api_router.include_router(admin_router.router)
+api_router.include_router(webhook_router.router)
+api_router.include_router(whatsapp_router.router)
 
 
 @api_router.get("/")

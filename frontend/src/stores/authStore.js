@@ -7,6 +7,8 @@ export const useAuthStore = create((set, get) => ({
   activeCompanyId: null,
   activeRole: null,
   activeModules: [],
+  flags: {},
+  permissions: [],
   loading: true,
 
   setSession: (data) =>
@@ -16,6 +18,8 @@ export const useAuthStore = create((set, get) => ({
       activeCompanyId: data.active_company_id || null,
       activeRole: data.active_role || null,
       activeModules: data.active_modules || [],
+      flags: data.flags || {},
+      permissions: data.permissions || [],
       loading: false,
     }),
 
@@ -28,11 +32,13 @@ export const useAuthStore = create((set, get) => ({
         activeCompanyId: data.active_company_id,
         activeRole: data.active_role,
         activeModules: data.active_modules || [],
+        flags: data.flags || {},
+        permissions: data.permissions || [],
         loading: false,
       });
       return data;
     } catch (e) {
-      set({ user: null, companies: [], activeCompanyId: null, activeRole: null, activeModules: [], loading: false });
+      set({ user: null, companies: [], activeCompanyId: null, activeRole: null, activeModules: [], flags: {}, permissions: [], loading: false });
       return null;
     }
   },
@@ -45,6 +51,8 @@ export const useAuthStore = create((set, get) => ({
       activeCompanyId: data.active_company_id,
       activeRole: data.active_role,
       activeModules: data.active_modules || [],
+      flags: data.flags || {},
+      permissions: data.permissions || [],
       loading: false,
     });
     return data;
@@ -56,7 +64,7 @@ export const useAuthStore = create((set, get) => ({
     } catch (e) {
       console.error("Logout request failed:", e?.message || e);
     }
-    set({ user: null, companies: [], activeCompanyId: null, activeRole: null, activeModules: [] });
+    set({ user: null, companies: [], activeCompanyId: null, activeRole: null, activeModules: [], flags: {}, permissions: [] });
   },
 
   switchCompany: async (companyId) => {
@@ -65,6 +73,8 @@ export const useAuthStore = create((set, get) => ({
       activeCompanyId: data.active_company_id,
       activeRole: data.active_role,
       activeModules: data.active_modules || [],
+      flags: data.flags || {},
+      permissions: data.permissions || [],
     });
     return data;
   },
@@ -82,7 +92,17 @@ export const useAuthStore = create((set, get) => ({
 
   hasModule: (mod) => {
     const s = get();
-    if (!s.activeModules || s.activeModules.length === 0) return true; // sem restrição
+    if (!s.activeModules || s.activeModules.length === 0) return true;
     return s.activeModules.includes(mod);
+  },
+
+  hasFlag: (name) => {
+    const s = get();
+    return !!s.flags[name];
+  },
+
+  hasPermission: (perm) => {
+    const s = get();
+    return s.permissions.includes(perm);
   },
 }));

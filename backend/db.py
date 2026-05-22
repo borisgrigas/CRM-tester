@@ -1,6 +1,7 @@
 """Shared PostgreSQL connection pool via asyncpg."""
 import json
 import os
+from pathlib import Path
 
 import asyncpg
 
@@ -173,6 +174,13 @@ async def init_pool() -> None:
     )
     async with _pool.acquire() as conn:
         await conn.execute(_CREATE_TABLES)
+
+
+async def apply_schema_extra() -> None:
+    sql_path = Path(__file__).parent / "core" / "schema_extra.sql"
+    sql = sql_path.read_text(encoding="utf-8")
+    async with _pool.acquire() as conn:
+        await conn.execute(sql)
 
 
 async def close_pool() -> None:

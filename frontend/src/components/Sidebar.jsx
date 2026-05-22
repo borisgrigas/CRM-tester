@@ -10,8 +10,12 @@ import {
   Gear,
   SignOut,
   UserGear,
+  ShieldCheck,
+  MapTrifold,
 } from "@phosphor-icons/react";
 import { useAuthStore } from "../stores/authStore";
+import { visibleModules } from "../lib/moduleRegistry";
+import CompanySwitcher from "./CompanySwitcher";
 
 const items = [
   { to: "/dashboard", label: "Dashboard", Icon: House, testid: "nav-dashboard" },
@@ -19,6 +23,7 @@ const items = [
   { to: "/pipeline", label: "Pipeline", Icon: Kanban, testid: "nav-pipeline" },
   { to: "/tasks", label: "Tarefas", Icon: ListChecks, testid: "nav-tasks" },
   { to: "/analytics", label: "Analytics", Icon: ChartBar, testid: "nav-analytics" },
+  { to: "/map", label: "Mapa", Icon: MapTrifold, testid: "nav-map" },
 ];
 
 const adminItems = [
@@ -30,8 +35,10 @@ const masterItems = [
 ];
 
 export default function Sidebar() {
-  const { user, activeRole, logout } = useAuthStore();
+  const { user, activeRole, flags, permissions, logout, companies } = useAuthStore();
   const navigate = useNavigate();
+  const visible = visibleModules(activeRole, flags, permissions);
+  const canSeeAdmin = visible.some((m) => m.id === "admin");
 
   const handleLogout = async () => {
     await logout();
@@ -54,6 +61,12 @@ export default function Sidebar() {
           </div>
         </div>
       </div>
+
+      {companies.length > 1 && (
+        <div className="border-b border-zinc-200 px-3 py-2">
+          <CompanySwitcher />
+        </div>
+      )}
 
       <nav className="flex-1 px-3 py-4">
         <p className="px-3 pb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -102,6 +115,22 @@ export default function Sidebar() {
                   {label}
                 </NavLink>
               ))}
+              {canSeeAdmin && (
+                <NavLink
+                  to="/admin"
+                  data-testid="nav-admin-panel"
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
+                      isActive
+                        ? "bg-zinc-900 text-white"
+                        : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                    }`
+                  }
+                >
+                  <ShieldCheck size={18} weight="duotone" />
+                  Painel Admin
+                </NavLink>
+              )}
             </div>
           </>
         )}

@@ -100,14 +100,22 @@ async def invite_user(payload: UserInvite, membership: dict = Depends(get_curren
     _validate_modules(payload.modules)
 
     email = payload.email.lower().strip()
-    existing = await conn.fetchrow("SELECT id FROM users WHERE email = $1", email)
+    clean_cpf = (payload.cpf or "").replace(".", "").replace("-", "").replace(" ", "").strip() or None
+
+    # CPF is the universal identity: find by CPF first, then fall back to email
+    existing = None
+    if clean_cpf:
+        existing = await conn.fetchrow("SELECT id FROM users WHERE cpf = $1", clean_cpf)
+    if not existing:
+        existing = await conn.fetchrow("SELECT id FROM users WHERE email = $1", email)
+
     if existing:
         user_id = existing["id"]
     else:
         user_id = str(uuid.uuid4())
         await conn.execute(
-            "INSERT INTO users (id, name, email, password_hash, avatar_url, created_at, deleted_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-            user_id, payload.name, email, hash_password(payload.password), None, _now_iso(), None,
+            "INSERT INTO users (id, name, email, password_hash, avatar_url, cpf, created_at, deleted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+            user_id, payload.name, email, hash_password(payload.password), None, clean_cpf, _now_iso(), None,
         )
 
     already = await conn.fetchrow(

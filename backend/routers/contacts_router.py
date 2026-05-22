@@ -103,12 +103,22 @@ async def create_contact(
     await conn.execute(
         """INSERT INTO contacts
            (id, company_id, type, name, email, phone, company_name, position, origin,
-            assigned_to, custom_fields, tags, score, created_at, updated_at, deleted_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)""",
+            assigned_to, custom_fields, tags, score,
+            cep, street, street_number, neighborhood, city, state,
+            notes, whatsapp_phone, region_interest, is_sold_store,
+            created_at, updated_at, deleted_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                   $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,
+                   $24,$25,$26)""",
         cid, membership["company_id"], data.get("type", "lead"), data["name"],
         data.get("email"), data.get("phone"), data.get("company_name"), data.get("position"),
         data.get("origin"), data.get("assigned_to"), data.get("custom_fields") or {},
-        data.get("tags") or [], 0, now, now, None,
+        data.get("tags") or [], 0,
+        data.get("cep"), data.get("street"), data.get("street_number"), data.get("neighborhood"),
+        data.get("city"), data.get("state"),
+        data.get("notes"), data.get("whatsapp_phone"), data.get("region_interest"),
+        data.get("is_sold_store", False),
+        now, now, None,
     )
     row = await conn.fetchrow("SELECT * FROM contacts WHERE id = $1", cid)
     return dict(row)

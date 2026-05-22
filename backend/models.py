@@ -61,6 +61,7 @@ class UserInvite(BaseModel):
     name: str
     role: Role
     password: str = "changeme123"
+    cpf: Optional[str] = None
     modules: list[str] = Field(default_factory=list)
     # Apenas válido quando o convite é feito a partir da franqueadora.
     additional_company_ids: list[str] = Field(default_factory=list)
@@ -106,6 +107,18 @@ class ContactCreate(BaseModel):
     assigned_to: Optional[str] = None
     custom_fields: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
+    # Address
+    cep: Optional[str] = None
+    street: Optional[str] = None
+    street_number: Optional[str] = None
+    neighborhood: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    # Profile
+    notes: Optional[str] = None
+    whatsapp_phone: Optional[str] = None
+    region_interest: Optional[str] = None
+    is_sold_store: bool = False
 
 
 class ContactUpdate(BaseModel):
@@ -120,6 +133,18 @@ class ContactUpdate(BaseModel):
     custom_fields: Optional[dict[str, Any]] = None
     tags: Optional[list[str]] = None
     score: Optional[int] = None
+    # Address
+    cep: Optional[str] = None
+    street: Optional[str] = None
+    street_number: Optional[str] = None
+    neighborhood: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    # Profile
+    notes: Optional[str] = None
+    whatsapp_phone: Optional[str] = None
+    region_interest: Optional[str] = None
+    is_sold_store: Optional[bool] = None
 
 
 class TagsInput(BaseModel):

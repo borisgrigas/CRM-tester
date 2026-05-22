@@ -9,7 +9,8 @@ import {
 } from "@dnd-kit/core";
 import { useDroppable, useDraggable } from "@dnd-kit/core";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trophy, XCircle } from "@phosphor-icons/react";
+import { Plus, Trophy, XCircle, ArrowSquareOut } from "@phosphor-icons/react";
+import { Link } from "react-router-dom";
 import Header from "../components/Header";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -68,7 +69,7 @@ function DealCard({ deal, isDragging }) {
   );
 }
 
-function Column({ stage, deals, onWon, onLost }) {
+function Column({ stage, deals, onWon, onLost, onDetail }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const total = deals.reduce((acc, d) => acc + (Number(d.value) || 0), 0);
   return (
@@ -98,8 +99,15 @@ function Column({ stage, deals, onWon, onLost }) {
         {deals.map((d) => (
           <div key={d.id} className="group/card relative">
             <DealCard deal={d} />
-            {/* Quick actions */}
             <div className="absolute right-2 top-2 hidden gap-1 group-hover/card:flex">
+              <button
+                onClick={(e) => { e.stopPropagation(); onDetail(d); }}
+                className="rounded-sm bg-zinc-50 p-1 text-zinc-500 hover:bg-zinc-100"
+                title="Ver detalhes"
+                data-testid={`deal-detail-${d.id}`}
+              >
+                <ArrowSquareOut size={12} weight="bold" />
+              </button>
               <button
                 onClick={() => onWon(d.id)}
                 className="rounded-sm bg-emerald-50 p-1 text-emerald-700 hover:bg-emerald-100"
@@ -126,7 +134,9 @@ function Column({ stage, deals, onWon, onLost }) {
 
 function NewDealDialog({ pipelineId, stages, onCreated }) {
   const [open, setOpen] = useState(false);
+  const [contactMode, setContactMode] = useState("existing");
   const [contactId, setContactId] = useState("");
+  const [newContact, setNewContact] = useState({ name: "", email: "", phone: "" });
   const [title, setTitle] = useState("");
   const [value, setValue] = useState("");
   const [stageId, setStageId] = useState(stages?.[0]?.id || "");
@@ -134,30 +144,48 @@ function NewDealDialog({ pipelineId, stages, onCreated }) {
   const contacts = useQuery({
     queryKey: ["contacts-for-deal"],
     queryFn: async () => (await api.get("/contacts", { params: { limit: 100 } })).data,
-    enabled: open,
+    enabled: open && contactMode === "existing",
   });
 
   const create = useMutation({
-    mutationFn: async () =>
-      (
+    mutationFn: async () => {
+      let cid = contactId;
+      if (contactMode === "new") {
+        if (!newContact.name) throw new Error("Nome do contato obrigatório");
+        const { data: c } = await api.post("/contacts", {
+          name: newContact.name,
+          ...(newContact.email && { email: newContact.email }),
+          ...(newContact.phone && { phone: newContact.phone }),
+        });
+        cid = c.id;
+      }
+      return (
         await api.post("/deals", {
-          contact_id: contactId,
+          contact_id: cid,
           pipeline_id: pipelineId,
           stage_id: stageId,
           title,
           value: Number(value || 0),
         })
-      ).data,
+      ).data;
+    },
     onSuccess: () => {
       toast.success("Deal criado");
       setOpen(false);
       setContactId("");
       setTitle("");
       setValue("");
+      setContactMode("existing");
+      setNewContact({ name: "", email: "", phone: "" });
       onCreated?.();
     },
-    onError: (e) => toast.error(formatApiError(e.response?.data?.detail)),
+    onError: (e) => toast.error(formatApiError(e.response?.data?.detail) || e.message || "Erro"),
   });
+
+  const canSubmit =
+    (contactMode === "existing" ? !!contactId : !!newContact.name) &&
+    !!title &&
+    !create.isPending;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -171,10 +199,34 @@ function NewDealDialog({ pipelineId, stages, onCreated }) {
           <DialogTitle>Novo deal</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 py-2">
+          {/* Contact mode toggle */}
           <div>
             <Label className="text-xs">Contato *</Label>
+            <div className="mt-1 flex gap-1 rounded border border-zinc-200 bg-zinc-50 p-1">
+              <button
+                type="button"
+                onClick={() => setContactMode("existing")}
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                  contactMode === "existing" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500 hover:text-zinc-700"
+                }`}
+              >
+                Contato existente
+              </button>
+              <button
+                type="button"
+                onClick={() => setContactMode("new")}
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                  contactMode === "new" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500 hover:text-zinc-700"
+                }`}
+              >
+                + Novo contato
+              </button>
+            </div>
+          </div>
+
+          {contactMode === "existing" ? (
             <Select value={contactId} onValueChange={setContactId}>
-              <SelectTrigger className="mt-1" data-testid="deal-form-contact">
+              <SelectTrigger data-testid="deal-form-contact">
                 <SelectValue placeholder="Escolha um contato" />
               </SelectTrigger>
               <SelectContent>
@@ -185,7 +237,40 @@ function NewDealDialog({ pipelineId, stages, onCreated }) {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          ) : (
+            <div className="space-y-2 rounded border border-zinc-200 bg-zinc-50 p-3">
+              <div>
+                <Label className="text-xs">Nome *</Label>
+                <Input
+                  className="mt-1"
+                  placeholder="Nome completo"
+                  value={newContact.name}
+                  onChange={(e) => setNewContact((n) => ({ ...n, name: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Email</Label>
+                  <Input
+                    className="mt-1"
+                    placeholder="email@..."
+                    value={newContact.email}
+                    onChange={(e) => setNewContact((n) => ({ ...n, email: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Telefone</Label>
+                  <Input
+                    className="mt-1"
+                    placeholder="+55 11..."
+                    value={newContact.phone}
+                    onChange={(e) => setNewContact((n) => ({ ...n, phone: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <Label className="text-xs">Título *</Label>
             <Input className="mt-1" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="deal-form-title" />
@@ -203,9 +288,7 @@ function NewDealDialog({ pipelineId, stages, onCreated }) {
                 </SelectTrigger>
                 <SelectContent>
                   {stages.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -213,12 +296,10 @@ function NewDealDialog({ pipelineId, stages, onCreated }) {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>
-            Cancelar
-          </Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
           <Button
             className="bg-blue-600 text-white hover:bg-blue-700"
-            disabled={!contactId || !title || create.isPending}
+            disabled={!canSubmit}
             onClick={() => create.mutate()}
             data-testid="deal-form-submit"
           >
@@ -230,10 +311,57 @@ function NewDealDialog({ pipelineId, stages, onCreated }) {
   );
 }
 
+// ── Deal detail modal ─────────────────────────────────────────────────────────
+
+function DealDetailDialog({ deal, onClose }) {
+  return (
+    <Dialog open={!!deal} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display tracking-tight">{deal?.title}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-zinc-500">Contato</span>
+            <Link
+              to={`/contacts/${deal?.contact_id}`}
+              onClick={onClose}
+              className="font-medium text-blue-600 hover:underline"
+            >
+              {deal?.contact_name}
+            </Link>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-zinc-500">Valor</span>
+            <span className="font-mono font-bold">{deal && fmtBRL(deal.value)}</span>
+          </div>
+          {deal?.expected_close_date && (
+            <div className="flex justify-between">
+              <span className="text-zinc-500">Previsão de fechamento</span>
+              <span className="font-mono">{deal.expected_close_date}</span>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Fechar</Button>
+          <Button asChild className="bg-blue-600 text-white hover:bg-blue-700">
+            <Link to={`/contacts/${deal?.contact_id}`} onClick={onClose}>
+              Ver cadastro completo
+            </Link>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Pipeline page ─────────────────────────────────────────────────────────────
+
 export default function Pipeline() {
   const qc = useQueryClient();
   const { activeRole } = useAuthStore();
   const [activeId, setActiveId] = useState(null);
+  const [selectedDeal, setSelectedDeal] = useState(null);
 
   const pipelines = useQuery({
     queryKey: ["pipelines"],
@@ -287,7 +415,6 @@ export default function Pipeline() {
     if (!over || !stages.find((s) => s.id === over.id)) return;
     const deal = (deals.data?.items || []).find((d) => d.id === active.id);
     if (!deal || deal.stage_id === over.id) return;
-    // optimistic update
     qc.setQueryData(["deals", pipeline?.id], (old) => {
       if (!old) return old;
       return {
@@ -327,10 +454,7 @@ export default function Pipeline() {
             onDragCancel={() => setActiveId(null)}
             onDragEnd={handleDragEnd}
           >
-            <div
-              className="kanban-scroll flex flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-2"
-              data-testid="kanban-board"
-            >
+            <div className="kanban-scroll flex flex-1 gap-4 overflow-x-auto overflow-y-hidden pb-2" data-testid="kanban-board">
               {stages.map((s) => (
                 <Column
                   key={s.id}
@@ -338,6 +462,7 @@ export default function Pipeline() {
                   deals={dealsByStage[s.id] || []}
                   onWon={(id) => won.mutate(id)}
                   onLost={(id) => lost.mutate(id)}
+                  onDetail={(deal) => setSelectedDeal(deal)}
                 />
               ))}
             </div>
@@ -345,6 +470,8 @@ export default function Pipeline() {
           </DndContext>
         )}
       </div>
+
+      <DealDetailDialog deal={selectedDeal} onClose={() => setSelectedDeal(null)} />
     </>
   );
 }
