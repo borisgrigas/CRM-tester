@@ -32,6 +32,10 @@ async def list_tasks(
         conditions.append(f"assigned_to = ${n}")
         params.append(membership["user_id"])
         n += 1
+    elif assigned_to:
+        conditions.append(f"assigned_to = ${n}")
+        params.append(assigned_to)
+        n += 1
 
     if status:
         conditions.append(f"status = ${n}")
@@ -41,11 +45,6 @@ async def list_tasks(
     if priority:
         conditions.append(f"priority = ${n}")
         params.append(priority)
-        n += 1
-
-    if assigned_to:
-        conditions.append(f"assigned_to = ${n}")
-        params.append(assigned_to)
         n += 1
 
     where = " AND ".join(conditions)
