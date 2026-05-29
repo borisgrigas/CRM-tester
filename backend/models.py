@@ -53,6 +53,10 @@ ALL_MODULES = [
     "settings",
     "admin_users",
     "admin_companies",
+    "map",
+    "whatsapp",
+    "franchise",
+    "admin",
 ]
 
 

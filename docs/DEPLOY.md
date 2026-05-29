@@ -147,25 +147,19 @@ curl https://crm-backend-production.up.railway.app/api/
 
 ---
 
-### 8. Criar o primeiro admin manualmente (produção)
+### Bootstrap do usuário master em produção
 
-Como o `seed.py` não roda em produção, crie o admin via API:
+O endpoint `/api/auth/register` não existe. O CRM usa o modelo de convite (invite-only).
+Para criar o usuário master em produção, conecte ao banco via Railway CLI ou psql e execute
+o script `backend/bootstrap_prod.py` (a ser criado na Fase 2), ou use as credenciais
+padrão definidas nas variáveis de ambiente `ADMIN_EMAIL` e `ADMIN_PASSWORD` que são
+inseridas automaticamente pelo `seed.py` na primeira execução.
 
 ```bash
-curl -X POST https://crm-backend-production.up.railway.app/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Admin Master",
-    "email": "admin@seudominio.com",
-    "password": "SuaSenhaForte123!"
-  }'
+# Conexão ao banco via Railway CLI
+railway connect Postgres
+# Em seguida use o psql para verificar/inserir o usuário master se necessário
 ```
-
-> Se o endpoint `/register` estiver desabilitado por segurança, conecte-se ao banco via Railway CLI e insira o usuário com `INSERT`:
-> ```bash
-> railway connect Postgres
-> # Em seguida use o psql para inserir o usuário
-> ```
 
 ---
 

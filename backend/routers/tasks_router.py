@@ -76,16 +76,35 @@ async def create_task(
         data.get("contact_id"), data.get("deal_id"), data.get("assigned_to"), user["id"],
         data.get("due_date"), data.get("priority", "medium"), "pending", None, now, now,
     )
-    row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", tid)
+    row = await conn.fetchrow(
+        "SELECT * FROM tasks WHERE id = $1 AND company_id = $2",
+        tid, membership["company_id"]
+    )
     return dict(row)
 
 
 @router.put("/{task_id}")
 async def update_task(task_id: str, payload: TaskUpdate, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    if membership["role"] == "ANALYST":
+        raise HTTPException(status_code=403, detail="ANALYST não pode editar tarefas")
+
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not update:
-        row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
+        row = await conn.fetchrow(
+            "SELECT * FROM tasks WHERE id = $1 AND company_id = $2",
+            task_id, membership["company_id"]
+        )
         return dict(row) if row else {}
+
+    if membership["role"] == "COMMERCIAL":
+        owner_row = await conn.fetchrow(
+            "SELECT assigned_to FROM tasks WHERE id = $1 AND company_id = $2",
+            task_id, membership["company_id"]
+        )
+        if not owner_row:
+            raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+        if owner_row["assigned_to"] != membership["user_id"]:
+            raise HTTPException(status_code=403, detail="COMMERCIAL só pode editar suas próprias tarefas")
 
     update["updated_at"] = _now_iso()
     set_parts = []
@@ -96,29 +115,33 @@ async def update_task(task_id: str, payload: TaskUpdate, membership: dict = Depe
         params.append(v)
         n += 1
     params.extend([task_id, membership["company_id"]])
-    result = await conn.execute(
-        f"UPDATE tasks SET {', '.join(set_parts)} WHERE id = ${n} AND company_id = ${n + 1}",
+    row = await conn.fetchrow(
+        f"UPDATE tasks SET {', '.join(set_parts)} WHERE id = ${n} AND company_id = ${n + 1} RETURNING *",
         *params,
     )
-    if result == "UPDATE 0":
+    if not row:
         raise HTTPException(status_code=404, detail="Tarefa não encontrada")
-    row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
     return dict(row)
 
 
 @router.patch("/{task_id}/complete")
 async def complete_task(task_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    if membership["role"] == "ANALYST":
+        raise HTTPException(status_code=403, detail="ANALYST não pode completar tarefas")
     now = _now_iso()
-    await conn.execute(
-        "UPDATE tasks SET status = 'done', completed_at = $1, updated_at = $1 WHERE id = $2 AND company_id = $3",
+    row = await conn.fetchrow(
+        "UPDATE tasks SET status = 'done', completed_at = $1, updated_at = $1 WHERE id = $2 AND company_id = $3 RETURNING *",
         now, task_id, membership["company_id"],
     )
-    row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
-    return dict(row) if row else {}
+    if not row:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+    return dict(row)
 
 
 @router.delete("/{task_id}", status_code=204)
 async def delete_task(task_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    if membership["role"] not in ("MASTER", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Apenas ADMIN ou MASTER podem deletar tarefas")
     await conn.execute(
         "DELETE FROM tasks WHERE id = $1 AND company_id = $2", task_id, membership["company_id"]
     )

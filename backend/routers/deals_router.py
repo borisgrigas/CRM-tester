@@ -112,7 +112,10 @@ async def create_deal(payload: DealCreate, membership: dict = Depends(get_curren
         "UPDATE contacts SET score = score + 10 WHERE id = $1 AND company_id = $2",
         data["contact_id"], membership["company_id"],
     )
-    row = await conn.fetchrow("SELECT * FROM deals WHERE id = $1", did)
+    row = await conn.fetchrow(
+        "SELECT * FROM deals WHERE id = $1 AND company_id = $2",
+        did, membership["company_id"]
+    )
     return dict(row)
 
 
@@ -136,8 +139,21 @@ async def update_deal(deal_id: str, payload: DealUpdate, membership: dict = Depe
 
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not update:
-        row = await conn.fetchrow("SELECT * FROM deals WHERE id = $1", deal_id)
+        row = await conn.fetchrow(
+            "SELECT * FROM deals WHERE id = $1 AND company_id = $2",
+            deal_id, membership["company_id"]
+        )
         return dict(row) if row else {}
+
+    if membership["role"] == "COMMERCIAL":
+        owner_row = await conn.fetchrow(
+            "SELECT assigned_to FROM deals WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+            deal_id, membership["company_id"]
+        )
+        if not owner_row:
+            raise HTTPException(status_code=404, detail="Deal não encontrado")
+        if owner_row["assigned_to"] != membership["user_id"]:
+            raise HTTPException(status_code=403, detail="COMMERCIAL só pode editar seus próprios deals")
 
     update["updated_at"] = _now_iso()
     set_parts = []
@@ -148,13 +164,12 @@ async def update_deal(deal_id: str, payload: DealUpdate, membership: dict = Depe
         params.append(v)
         n += 1
     params.extend([deal_id, membership["company_id"]])
-    result = await conn.execute(
-        f"UPDATE deals SET {', '.join(set_parts)} WHERE id = ${n} AND company_id = ${n + 1}",
+    row = await conn.fetchrow(
+        f"UPDATE deals SET {', '.join(set_parts)} WHERE id = ${n} AND company_id = ${n + 1} RETURNING *",
         *params,
     )
-    if result == "UPDATE 0":
+    if not row:
         raise HTTPException(status_code=404, detail="Deal não encontrado")
-    row = await conn.fetchrow("SELECT * FROM deals WHERE id = $1", deal_id)
     return dict(row)
 
 
@@ -173,20 +188,30 @@ async def delete_deal(deal_id: str, membership: dict = Depends(get_current_compa
 async def move_stage(deal_id: str, payload: StageMoveInput, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     if membership["role"] == "ANALYST":
         raise HTTPException(status_code=403, detail="ANALYST não pode mover")
+
+    if membership["role"] == "COMMERCIAL":
+        owner_row = await conn.fetchrow(
+            "SELECT assigned_to FROM deals WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+            deal_id, membership["company_id"]
+        )
+        if not owner_row:
+            raise HTTPException(status_code=404, detail="Deal não encontrado")
+        if owner_row["assigned_to"] != membership["user_id"]:
+            raise HTTPException(status_code=403, detail="COMMERCIAL só pode editar seus próprios deals")
+
     now = _now_iso()
     if payload.pipeline_id:
-        result = await conn.execute(
-            "UPDATE deals SET stage_id = $1, pipeline_id = $2, updated_at = $3 WHERE id = $4 AND company_id = $5",
+        deal_row = await conn.fetchrow(
+            "UPDATE deals SET stage_id = $1, pipeline_id = $2, updated_at = $3 WHERE id = $4 AND company_id = $5 RETURNING *",
             payload.stage_id, payload.pipeline_id, now, deal_id, membership["company_id"],
         )
     else:
-        result = await conn.execute(
-            "UPDATE deals SET stage_id = $1, updated_at = $2 WHERE id = $3 AND company_id = $4",
+        deal_row = await conn.fetchrow(
+            "UPDATE deals SET stage_id = $1, updated_at = $2 WHERE id = $3 AND company_id = $4 RETURNING *",
             payload.stage_id, now, deal_id, membership["company_id"],
         )
-    if result == "UPDATE 0":
+    if not deal_row:
         raise HTTPException(status_code=404, detail="Deal não encontrado")
-    deal_row = await conn.fetchrow("SELECT * FROM deals WHERE id = $1", deal_id)
     deal = dict(deal_row)
     if deal.get("contact_id"):
         await conn.execute(
@@ -200,12 +225,24 @@ async def move_stage(deal_id: str, payload: StageMoveInput, membership: dict = D
 async def mark_won(deal_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     if membership["role"] == "ANALYST":
         raise HTTPException(status_code=403, detail="ANALYST não pode marcar deal como ganho")
+
+    if membership["role"] == "COMMERCIAL":
+        owner_row = await conn.fetchrow(
+            "SELECT assigned_to FROM deals WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+            deal_id, membership["company_id"]
+        )
+        if not owner_row:
+            raise HTTPException(status_code=404, detail="Deal não encontrado")
+        if owner_row["assigned_to"] != membership["user_id"]:
+            raise HTTPException(status_code=403, detail="COMMERCIAL só pode editar seus próprios deals")
+
     now = _now_iso()
-    await conn.execute(
-        "UPDATE deals SET won_at = $1, updated_at = $1 WHERE id = $2 AND company_id = $3",
+    deal_row = await conn.fetchrow(
+        "UPDATE deals SET won_at = $1, updated_at = $1 WHERE id = $2 AND company_id = $3 RETURNING *",
         now, deal_id, membership["company_id"],
     )
-    deal_row = await conn.fetchrow("SELECT * FROM deals WHERE id = $1", deal_id)
+    if not deal_row:
+        raise HTTPException(status_code=404, detail="Deal não encontrado")
     deal = dict(deal_row)
     if deal.get("contact_id"):
         await conn.execute(
@@ -219,12 +256,24 @@ async def mark_won(deal_id: str, membership: dict = Depends(get_current_company)
 async def mark_lost(deal_id: str, payload: LostInput, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     if membership["role"] == "ANALYST":
         raise HTTPException(status_code=403, detail="ANALYST não pode marcar deal como perdido")
+
+    if membership["role"] == "COMMERCIAL":
+        owner_row = await conn.fetchrow(
+            "SELECT assigned_to FROM deals WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+            deal_id, membership["company_id"]
+        )
+        if not owner_row:
+            raise HTTPException(status_code=404, detail="Deal não encontrado")
+        if owner_row["assigned_to"] != membership["user_id"]:
+            raise HTTPException(status_code=403, detail="COMMERCIAL só pode editar seus próprios deals")
+
     now = _now_iso()
-    await conn.execute(
-        "UPDATE deals SET lost_at = $1, lost_reason = $2, updated_at = $1 WHERE id = $3 AND company_id = $4",
+    deal_row = await conn.fetchrow(
+        "UPDATE deals SET lost_at = $1, lost_reason = $2, updated_at = $1 WHERE id = $3 AND company_id = $4 RETURNING *",
         now, payload.reason, deal_id, membership["company_id"],
     )
-    deal_row = await conn.fetchrow("SELECT * FROM deals WHERE id = $1", deal_id)
+    if not deal_row:
+        raise HTTPException(status_code=404, detail="Deal não encontrado")
     deal = dict(deal_row)
     if deal.get("contact_id"):
         await conn.execute(

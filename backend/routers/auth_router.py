@@ -17,6 +17,7 @@ from core.feature_flags import get_company_flags
 from core.permissions import get_user_permissions
 from db import get_db
 from deps import get_current_user
+from services.email import send_password_reset
 from models import (
     ForgotPasswordInput,
     LoginInput,
@@ -101,6 +102,7 @@ async def login(payload: LoginInput, response: Response, conn=Depends(get_db)):
 
     flags = await get_company_flags(conn, default_company["id"])
     permissions = await get_user_permissions(conn, user["id"], default_company["id"])
+    active_modules = await _membership_modules(conn, user["id"], default_company["id"])
     user.pop("password_hash", None)
     return {
         "access_token": access,
@@ -111,6 +113,7 @@ async def login(payload: LoginInput, response: Response, conn=Depends(get_db)):
         "active_role": default_company["role"],
         "flags": flags,
         "permissions": permissions,
+        "active_modules": active_modules,
     }
 
 
@@ -127,7 +130,7 @@ async def refresh(request: Request, response: Response, conn=Depends(get_db)):
         raise HTTPException(status_code=401, detail="Token inválido")
 
     row = await conn.fetchrow(
-        "SELECT id, name, email, avatar_url, created_at FROM users WHERE id = $1", payload["sub"]
+        "SELECT id, name, email, avatar_url, created_at FROM users WHERE id = $1 AND deleted_at IS NULL", payload["sub"]
     )
     if not row:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
@@ -218,7 +221,7 @@ async def forgot_password(payload: ForgotPasswordInput, conn=Depends(get_db)):
             "INSERT INTO password_reset_tokens (id, token, user_id, expires_at, used) VALUES ($1, $2, $3, $4, $5)",
             str(uuid.uuid4()), token, user_row["id"], expires, False,
         )
-        print(f"[RESET LINK] /reset-password?token={token}")
+        await send_password_reset(email=payload.email, token=token)
     return Response(status_code=204)
 
 
@@ -246,7 +249,7 @@ async def change_password(
     payload: PasswordChangeInput,
     user: dict = Depends(get_current_user), conn=Depends(get_db),
 ):
-    full = await conn.fetchrow("SELECT password_hash FROM users WHERE id = $1", user["id"])
+    full = await conn.fetchrow("SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL", user["id"])
     if not full or not verify_password(payload.current_password, full["password_hash"]):
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
     await conn.execute(

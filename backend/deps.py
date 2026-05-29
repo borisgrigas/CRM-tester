@@ -26,7 +26,7 @@ async def get_current_user(request: Request, conn=Depends(get_db)) -> dict:
         raise HTTPException(status_code=401, detail="Token inválido")
 
     row = await conn.fetchrow(
-        "SELECT id, name, email, avatar_url, created_at, deleted_at FROM users WHERE id = $1",
+        "SELECT id, name, email, avatar_url, created_at, deleted_at FROM users WHERE id = $1 AND deleted_at IS NULL",
         payload["sub"],
     )
     if not row:

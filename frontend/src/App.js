@@ -176,7 +176,9 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Layout>
-                    <AdminUsers />
+                    <ModuleGuard module="admin" level="manage">
+                      <AdminUsers />
+                    </ModuleGuard>
                   </Layout>
                 </ProtectedRoute>
               }
@@ -186,7 +188,9 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Layout>
-                    <AdminCompanies />
+                    <ModuleGuard module="admin" level="manage">
+                      <AdminCompanies />
+                    </ModuleGuard>
                   </Layout>
                 </ProtectedRoute>
               }

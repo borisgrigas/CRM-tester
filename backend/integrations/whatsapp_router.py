@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from db import get_db
-from deps import get_current_company, get_current_user
+from deps import get_current_company, get_current_user, require_module
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
@@ -115,7 +115,7 @@ async def inbound_message(company_slug: str, payload: InboundMessage, conn=Depen
 # Send — authenticated, logs outbound message
 # ---------------------------------------------------------------------------
 
-@router.post("/send", status_code=201)
+@router.post("/send", status_code=201, dependencies=[Depends(require_module("whatsapp"))])
 async def send_message(
     payload: SendMessage,
     user: dict = Depends(get_current_user),
@@ -165,7 +165,7 @@ async def send_message(
 # Conversations — list contacts with at least one message, sorted by last msg
 # ---------------------------------------------------------------------------
 
-@router.get("/conversations")
+@router.get("/conversations", dependencies=[Depends(require_module("whatsapp"))])
 async def list_conversations(
     membership: dict = Depends(get_current_company),
     conn=Depends(get_db),
@@ -194,7 +194,7 @@ async def list_conversations(
 # Messages — list messages for a contact (existing, unchanged)
 # ---------------------------------------------------------------------------
 
-@router.get("/messages")
+@router.get("/messages", dependencies=[Depends(require_module("whatsapp"))])
 async def list_messages(
     contact_id: Optional[str] = None,
     membership: dict = Depends(get_current_company),

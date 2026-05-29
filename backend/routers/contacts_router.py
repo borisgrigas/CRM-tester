@@ -120,7 +120,10 @@ async def create_contact(
         data.get("is_sold_store", False),
         now, now, None,
     )
-    row = await conn.fetchrow("SELECT * FROM contacts WHERE id = $1", cid)
+    row = await conn.fetchrow(
+        "SELECT * FROM contacts WHERE id = $1 AND company_id = $2",
+        cid, membership["company_id"]
+    )
     return dict(row)
 
 
@@ -157,8 +160,21 @@ async def update_contact(
 
     update = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not update:
-        row = await conn.fetchrow("SELECT * FROM contacts WHERE id = $1", contact_id)
+        row = await conn.fetchrow(
+            "SELECT * FROM contacts WHERE id = $1 AND company_id = $2",
+            contact_id, membership["company_id"]
+        )
         return dict(row) if row else {}
+
+    if membership["role"] == "COMMERCIAL":
+        owner_row = await conn.fetchrow(
+            "SELECT assigned_to FROM contacts WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+            contact_id, membership["company_id"]
+        )
+        if not owner_row:
+            raise HTTPException(status_code=404, detail="Contato não encontrado")
+        if owner_row["assigned_to"] != membership["user_id"]:
+            raise HTTPException(status_code=403, detail="COMMERCIAL só pode editar seus próprios contatos")
 
     update["updated_at"] = _now_iso()
     set_parts = []
@@ -169,13 +185,12 @@ async def update_contact(
         params.append(v)
         n += 1
     params.extend([contact_id, membership["company_id"]])
-    result = await conn.execute(
-        f"UPDATE contacts SET {', '.join(set_parts)} WHERE id = ${n} AND company_id = ${n + 1} AND deleted_at IS NULL",
+    row = await conn.fetchrow(
+        f"UPDATE contacts SET {', '.join(set_parts)} WHERE id = ${n} AND company_id = ${n + 1} AND deleted_at IS NULL RETURNING *",
         *params,
     )
-    if result == "UPDATE 0":
+    if not row:
         raise HTTPException(status_code=404, detail="Contato não encontrado")
-    row = await conn.fetchrow("SELECT * FROM contacts WHERE id = $1", contact_id)
     return dict(row)
 
 
@@ -194,50 +209,55 @@ async def delete_contact(contact_id: str, membership: dict = Depends(get_current
 async def convert_to_client(contact_id: str, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
     if membership["role"] == "ANALYST":
         raise HTTPException(status_code=403, detail="ANALYST não pode converter")
-    result = await conn.execute(
-        "UPDATE contacts SET type = 'client', updated_at = $1 WHERE id = $2 AND company_id = $3 AND deleted_at IS NULL",
+    row = await conn.fetchrow(
+        "UPDATE contacts SET type = 'client', updated_at = $1 WHERE id = $2 AND company_id = $3 AND deleted_at IS NULL RETURNING *",
         _now_iso(), contact_id, membership["company_id"],
     )
-    if result == "UPDATE 0":
+    if not row:
         raise HTTPException(status_code=404, detail="Contato não encontrado")
-    row = await conn.fetchrow("SELECT * FROM contacts WHERE id = $1", contact_id)
     return dict(row)
 
 
 @router.post("/{contact_id}/tags")
 async def add_tags(contact_id: str, payload: TagsInput, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    if membership["role"] == "ANALYST":
+        raise HTTPException(status_code=403, detail="ANALYST não pode alterar tags")
     row = await conn.fetchrow(
-        "SELECT tags FROM contacts WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+        "SELECT tags, assigned_to FROM contacts WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
         contact_id, membership["company_id"],
     )
     if not row:
         raise HTTPException(status_code=404, detail="Contato não encontrado")
+    if membership["role"] == "COMMERCIAL" and row["assigned_to"] != membership["user_id"]:
+        raise HTTPException(status_code=403, detail="COMMERCIAL só pode editar seus próprios contatos")
     current = list(row["tags"] or [])
     new_tags = list(set(current + payload.tags))
-    await conn.execute(
-        "UPDATE contacts SET tags = $1, updated_at = $2 WHERE id = $3",
-        new_tags, _now_iso(), contact_id,
+    updated = await conn.fetchrow(
+        "UPDATE contacts SET tags = $1, updated_at = $2 WHERE id = $3 AND company_id = $4 RETURNING *",
+        new_tags, _now_iso(), contact_id, membership["company_id"],
     )
-    row = await conn.fetchrow("SELECT * FROM contacts WHERE id = $1", contact_id)
-    return dict(row)
+    return dict(updated)
 
 
 @router.delete("/{contact_id}/tags")
 async def remove_tags(contact_id: str, payload: TagsInput, membership: dict = Depends(get_current_company), conn=Depends(get_db)):
+    if membership["role"] == "ANALYST":
+        raise HTTPException(status_code=403, detail="ANALYST não pode alterar tags")
     row = await conn.fetchrow(
-        "SELECT tags FROM contacts WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+        "SELECT tags, assigned_to FROM contacts WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
         contact_id, membership["company_id"],
     )
     if not row:
         raise HTTPException(status_code=404, detail="Contato não encontrado")
+    if membership["role"] == "COMMERCIAL" and row["assigned_to"] != membership["user_id"]:
+        raise HTTPException(status_code=403, detail="COMMERCIAL só pode editar seus próprios contatos")
     current = list(row["tags"] or [])
     new_tags = [t for t in current if t not in payload.tags]
-    await conn.execute(
-        "UPDATE contacts SET tags = $1, updated_at = $2 WHERE id = $3",
-        new_tags, _now_iso(), contact_id,
+    updated = await conn.fetchrow(
+        "UPDATE contacts SET tags = $1, updated_at = $2 WHERE id = $3 AND company_id = $4 RETURNING *",
+        new_tags, _now_iso(), contact_id, membership["company_id"],
     )
-    row = await conn.fetchrow("SELECT * FROM contacts WHERE id = $1", contact_id)
-    return dict(row)
+    return dict(updated)
 
 
 @router.get("/{contact_id}/activities")
@@ -281,5 +301,8 @@ async def add_activity(
             delta, now, contact_id, membership["company_id"],
         )
 
-    row = await conn.fetchrow("SELECT * FROM contact_activities WHERE id = $1", aid)
+    row = await conn.fetchrow(
+        "SELECT * FROM contact_activities WHERE id = $1 AND company_id = $2",
+        aid, membership["company_id"]
+    )
     return dict(row)

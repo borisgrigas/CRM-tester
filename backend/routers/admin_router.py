@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from db import get_db
-from deps import get_current_company, require_roles
+from deps import get_current_company, require_module, require_roles
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -23,7 +23,7 @@ class FlagUpsert(BaseModel):
     is_active: bool = True
 
 
-@router.get("/flags")
+@router.get("/flags", dependencies=[Depends(require_module("admin"))])
 async def list_flags(
     membership: dict = Depends(require_roles("MASTER", "ADMIN")),
     conn=Depends(get_db),
@@ -35,7 +35,7 @@ async def list_flags(
     return {"items": [dict(r) for r in rows]}
 
 
-@router.put("/flags/{name}")
+@router.put("/flags/{name}", dependencies=[Depends(require_module("admin"))])
 async def upsert_flag(
     name: str,
     payload: FlagUpsert,
@@ -69,7 +69,7 @@ class PermissionUpsert(BaseModel):
     permission: str  # e.g. "contacts:manage"
 
 
-@router.get("/permissions")
+@router.get("/permissions", dependencies=[Depends(require_module("admin"))])
 async def list_permissions(
     membership: dict = Depends(require_roles("MASTER", "ADMIN")),
     conn=Depends(get_db),
@@ -81,7 +81,7 @@ async def list_permissions(
     return {"items": [dict(r) for r in rows]}
 
 
-@router.put("/permissions/{user_id}")
+@router.put("/permissions/{user_id}", dependencies=[Depends(require_module("admin"))])
 async def grant_permission(
     user_id: str,
     payload: PermissionUpsert,
@@ -101,7 +101,7 @@ async def grant_permission(
     return {"ok": True, "permission": payload.permission}
 
 
-@router.delete("/permissions/{user_id}/{permission}", status_code=204)
+@router.delete("/permissions/{user_id}/{permission}", status_code=204, dependencies=[Depends(require_module("admin"))])
 async def revoke_permission(
     user_id: str,
     permission: str,

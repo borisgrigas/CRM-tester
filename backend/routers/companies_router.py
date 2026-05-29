@@ -6,10 +6,16 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from db import get_db
-from deps import get_current_user, require_franchisor_master
+from deps import get_current_user, require_franchisor_master, require_module
 from models import CompanyCreate, CompanyUpdate
 
 router = APIRouter(prefix="/companies", tags=["companies"])
+
+# Nota de autorização:
+# _ensure_master_anywhere: verifica MASTER em qualquer empresa da rede.
+#   Usada em GETs — permite que MASTER de unidade veja todas as empresas.
+# require_franchisor_master: verifica MASTER *e* empresa ativa = franqueadora.
+#   Usada em mutações — apenas o operador da franqueadora altera a rede.
 
 
 def _now_iso() -> str:
@@ -90,7 +96,7 @@ async def create_company(
     return dict(row)
 
 
-@router.get("/consolidated")
+@router.get("/consolidated", dependencies=[Depends(require_module("franchise"))])
 async def consolidated(user: dict = Depends(get_current_user), conn=Depends(get_db)):
     await _ensure_master_or_admin_anywhere(conn, user["id"])
     rows = await conn.fetch("SELECT * FROM companies WHERE deleted_at IS NULL")

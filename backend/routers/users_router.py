@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth_utils import hash_password
 from db import get_db
 from deps import get_current_company, get_current_user, require_roles
+from services.email import send_invite
 from models import (
     ALL_MODULES,
     GrantCompanyAccess,
@@ -154,7 +155,7 @@ async def invite_user(payload: UserInvite, membership: dict = Depends(get_curren
             )
             granted_extras.append(cid)
 
-    print(f"[INVITE] activation link for {email}: /accept-invite?token={uuid.uuid4()}")
+    await send_invite(email=email, company_name=membership.get("_company", {}).get("name", ""))
     return {
         "id": user_id, "email": email, "name": payload.name, "role": payload.role,
         "is_active": True, "modules": payload.modules,
@@ -299,7 +300,7 @@ async def update_profile(payload: ProfileUpdate, user: dict = Depends(get_curren
             *params,
         )
     row = await conn.fetchrow(
-        "SELECT id, name, email, avatar_url, created_at, deleted_at FROM users WHERE id = $1", user["id"]
+        "SELECT id, name, email, avatar_url, created_at, deleted_at FROM users WHERE id = $1 AND deleted_at IS NULL", user["id"]
     )
     return dict(row)
 

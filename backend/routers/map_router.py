@@ -3,13 +3,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from db import get_db
-from deps import get_current_company
+from deps import get_current_company, require_module
 
-router = APIRouter(prefix="/map", tags=["map"])
+router = APIRouter(prefix="/map", tags=["map"], dependencies=[Depends(require_module("map"))])
 
 _DEFAULTS = {
     "center_lat": -14.235,
@@ -54,6 +54,8 @@ async def update_settings(
     membership: dict = Depends(get_current_company),
     conn=Depends(get_db),
 ):
+    if membership["role"] not in ("MASTER", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Apenas ADMIN/MASTER podem alterar configurações do mapa")
     existing = await conn.fetchrow(
         "SELECT id FROM map_settings WHERE company_id = $1", membership["company_id"]
     )
